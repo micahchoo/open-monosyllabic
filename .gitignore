@@ -1,0 +1,20 @@
+__pycache__/
+*.pyc
+.DS_Store
+/tmp/
+# baked artifacts are reproducible via `python3 -m oms.bake` / `oms.scaleout`
+/data/oms-canon-v1/
+/data/current.json
+/data-scaled/
+# generated audio is reproducible via `python3 -m oms.audio`
+/web/audio/*.webm
+/web/audio/manifest.json
+/data/scaled/
+# cloned real datasets (re-fetch via git clone; each has its own .git)
+/sources/
+
+# local toolchains and models — never commit
+/.venv-toucan/
+/.venv-toucan-src/
+/Models/
+.claude/.skill-invocation-log

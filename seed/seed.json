@@ -1,0 +1,227 @@
+{
+ "_note": "Hand-authored seed fixture (IMPLEMENTATION-STRATEGY §9 step 0). ~7 languages spanning the stress axes, incl. one expected-zero-Forms language (Nuxalk). Real IPA transcriptions; tones as CLTS tone letters. Swapped for real ingested CLDF at scale via the DataStore contract (§10). IPA/glosses are illustrative, not authoritative. [2026-07-04: removed 7 entries fabricating wikipron attribution (stan1290/viet1252/finn1318/hawa1245 — wikipron does not cover them).]",
+ "sources": [
+  {
+   "id": "northeuralex-0.9",
+   "tier": "curated",
+   "license": "CC-BY-SA-4.0"
+  },
+  {
+   "id": "lexibank-seed",
+   "tier": "curated",
+   "license": "CC-BY-4.0"
+  },
+  {
+   "id": "epitran",
+   "tier": "generated",
+   "license": "CC0-1.0"
+  }
+ ],
+ "languages": [
+  {
+   "glottocode": "stan1290",
+   "name": "Mandarin Chinese",
+   "macroarea": "Eurasia",
+   "latitude": 34.3,
+   "longitude": 108.9,
+   "doc_status": "well",
+   "prosodic_type": "permits-open-light"
+  },
+  {
+   "glottocode": "yoru1245",
+   "name": "Yoruba",
+   "macroarea": "Africa",
+   "latitude": 7.4,
+   "longitude": 3.9,
+   "doc_status": "moderate",
+   "prosodic_type": "permits-open-light"
+  },
+  {
+   "glottocode": "hawa1245",
+   "name": "Hawaiian",
+   "macroarea": "Papunesia",
+   "latitude": 19.7,
+   "longitude": -155.5,
+   "doc_status": "well",
+   "prosodic_type": "permits-open-light"
+  },
+  {
+   "glottocode": "viet1252",
+   "name": "Vietnamese",
+   "macroarea": "Eurasia",
+   "latitude": 21.0,
+   "longitude": 105.8,
+   "doc_status": "well",
+   "prosodic_type": "permits-open-light"
+  },
+  {
+   "glottocode": "finn1318",
+   "name": "Finnish",
+   "macroarea": "Eurasia",
+   "latitude": 62.0,
+   "longitude": 26.0,
+   "doc_status": "well",
+   "prosodic_type": "bimoraic-minimum"
+  },
+  {
+   "glottocode": "fiji1243",
+   "name": "Fijian",
+   "macroarea": "Papunesia",
+   "latitude": -18.0,
+   "longitude": 178.0,
+   "doc_status": "moderate",
+   "prosodic_type": "permits-open-light"
+  },
+  {
+   "glottocode": "bell1243",
+   "name": "Nuxalk (Bella Coola)",
+   "macroarea": "North America",
+   "latitude": 52.4,
+   "longitude": -126.7,
+   "doc_status": "moderate",
+   "prosodic_type": "consonant-heavy"
+  }
+ ],
+ "entries": [
+  {
+   "glottocode": "stan1290",
+   "ipa": "ma˥",
+   "gloss": "mother",
+   "concepticon_id": 1216,
+   "source": "northeuralex-0.9"
+  },
+  {
+   "glottocode": "stan1290",
+   "ipa": "ma˨˩˦",
+   "gloss": "horse",
+   "concepticon_id": 203,
+   "source": "northeuralex-0.9"
+  },
+  {
+   "glottocode": "yoru1245",
+   "ipa": "ma",
+   "gloss": "still",
+   "concepticon_id": null,
+   "source": "lexibank-seed"
+  },
+  {
+   "glottocode": "yoru1245",
+   "ipa": "wa˥",
+   "gloss": "come",
+   "concepticon_id": 1946,
+   "source": "lexibank-seed"
+  },
+  {
+   "glottocode": "yoru1245",
+   "ipa": "kɔ",
+   "gloss": "sing",
+   "concepticon_id": null,
+   "source": "epitran"
+  },
+  {
+   "glottocode": "yoru1245",
+   "ipa": "ɔmɔ",
+   "gloss": "child",
+   "concepticon_id": 1224,
+   "source": "epitran"
+  },
+  {
+   "glottocode": "hawa1245",
+   "ipa": "a",
+   "gloss": "of",
+   "concepticon_id": null,
+   "source": "lexibank-seed"
+  },
+  {
+   "glottocode": "hawa1245",
+   "ipa": "ma",
+   "gloss": "at",
+   "concepticon_id": null,
+   "source": "lexibank-seed"
+  },
+  {
+   "glottocode": "hawa1245",
+   "ipa": "wai",
+   "gloss": "water",
+   "concepticon_id": 948,
+   "source": "lexibank-seed"
+  },
+  {
+   "glottocode": "viet1252",
+   "ipa": "tʰu˧",
+   "gloss": "letter",
+   "concepticon_id": null,
+   "source": "epitran"
+  },
+  {
+   "glottocode": "finn1318",
+   "ipa": "puː",
+   "gloss": "tree",
+   "concepticon_id": 906,
+   "source": "northeuralex-0.9"
+  },
+  {
+   "glottocode": "finn1318",
+   "ipa": "mɑː",
+   "gloss": "land",
+   "concepticon_id": 1211,
+   "source": "northeuralex-0.9"
+  },
+  {
+   "glottocode": "finn1318",
+   "ipa": "tie",
+   "gloss": "road",
+   "concepticon_id": 1264,
+   "source": "northeuralex-0.9"
+  },
+  {
+   "glottocode": "finn1318",
+   "ipa": "kissa",
+   "gloss": "cat",
+   "concepticon_id": 1216,
+   "source": "northeuralex-0.9"
+  },
+  {
+   "glottocode": "fiji1243",
+   "ipa": "ma",
+   "gloss": "and",
+   "concepticon_id": null,
+   "source": "epitran"
+  },
+  {
+   "glottocode": "fiji1243",
+   "ipa": "wai",
+   "gloss": "water",
+   "concepticon_id": 948,
+   "source": "lexibank-seed"
+  },
+  {
+   "glottocode": "fiji1243",
+   "ipa": "ni",
+   "gloss": "the",
+   "concepticon_id": null,
+   "source": "epitran"
+  },
+  {
+   "glottocode": "bell1243",
+   "ipa": "pʰtʰ",
+   "gloss": "thick",
+   "concepticon_id": null,
+   "source": "lexibank-seed"
+  },
+  {
+   "glottocode": "bell1243",
+   "ipa": "tʼx",
+   "gloss": "cut",
+   "concepticon_id": null,
+   "source": "lexibank-seed"
+  },
+  {
+   "glottocode": "bell1243",
+   "ipa": "kʷas",
+   "gloss": "warm",
+   "concepticon_id": null,
+   "source": "lexibank-seed"
+  }
+ ]
+}

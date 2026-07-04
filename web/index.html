@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open Monosyllabic — Explorer</title>
+<style>
+  /* SK-63 "Calibrated Instrument" — Rams/Braun design system.
+     Laws: serif = phonetic data, nothing else. Color = signal only (tier trio,
+     one review red, one quantitative hue). Selection is achromatic: pressed
+     surface + ink border + 6px square notch — there is no accent token to reach
+     for. Depth is drawn (surface ladder + rules), never blurred. One animation
+     in the whole product (sheet slide). IPA is never bold/italic/spaced/caps. */
+  :root{
+    /* surfaces — page → panel → raised; pressed = switched on */
+    --page:#E6E4DF; --panel:#F2F1ED; --raised:#FBFAF8; --pressed:#DDDAD4;
+    /* ink — text-3 sits just above the 4.5:1 floor on --page and BELOW it on
+       --pressed (4.43): text-3 must never sit on a pressed surface. Re-check
+       on any surface change. text-4 MEANS "not information": disabled only. */
+    --text-1:#21201C; --text-2:#4A4841; --text-3:#64615A; --text-4:#8B877E;
+    /* two line weights; the third step is always ink (--text-1) = engaged */
+    --line-1:#C9C6BF; --line-2:#A39F96;
+    /* the single quantitative hue: heatmap ramp end, lit map dots */
+    --data:#2F5E6C;
+    /* provenance tiers (names are the JS contract). Hue+glyph+fill redundant.
+       --generated is tuned to pass 4.5:1 even on --pressed (verified 4.71). */
+    --curated:#2E5E4E; --mined:#7A5A1C; --generated:#605D56;
+    /* the one alarm hue: pending review — everywhere, including the map */
+    --review:#A63A22;
+    --map-land:#CFCCC4;
+    --ui: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --ipa: 'Charis SIL',Charis,'Gentium Plus','Doulos SIL',Gentium,'Times New Roman',Georgia,serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page);color:var(--text-1);font-family:var(--ui);
+       font-size:15px;line-height:1.45}
+  a{color:var(--text-1);cursor:pointer;text-decoration:underline;
+    text-decoration-color:var(--line-2);text-underline-offset:2px}
+  a:hover{text-decoration-color:var(--text-1)}
+  :focus-visible{outline:1.5px solid var(--text-1);outline-offset:1px}
+  /* serif = language material. The resets are load-bearing: IPA is never
+     uppercase, letter-spaced, bold, or italic — even inside engraved labels. */
+  .ipa,.ipa17,.ipa22{font-family:var(--ipa);font-weight:400;
+    text-transform:none;letter-spacing:normal;font-style:normal}
+  .ipa17{font-size:17px}
+  .ipa22{font-size:22px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92em}
+
+  /* ---- nav: the fascia ---- */
+  nav{display:flex;align-items:center;flex-wrap:wrap;gap:.2rem 1.1rem;
+      min-height:48px;padding:0 clamp(1rem,4vw,3rem);
+      border-bottom:1px solid var(--line-2);position:sticky;top:0;background:var(--page);z-index:5}
+  nav .brand{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+             color:var(--text-2);margin-right:auto}
+  nav button{position:relative;background:none;border:none;font-family:var(--ui);
+             font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;
+             color:var(--text-3);cursor:pointer;padding:15px 0 17px}
+  nav button:hover{color:var(--text-1)}
+  nav button.active{color:var(--text-1)}
+  /* the index notch: selection is a square, never a hue */
+  nav button.active::after{content:"";position:absolute;left:50%;bottom:7px;
+                           width:6px;height:6px;background:var(--text-1);transform:translateX(-50%)}
+  nav .navsep{width:1px;height:16px;background:var(--line-1)}
+  nav .pin-badge{font-size:11px;font-variant-numeric:tabular-nums;background:var(--text-1);
+                 color:var(--raised);border-radius:2px;padding:1px 5px;margin-left:5px}
+  /* the maker's plate: even the version stamp carries tier composition
+     (hidden below 1150px for space; the per-view stamps remain) */
+  .plate{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);
+         font-variant-numeric:tabular-nums;border:1px solid var(--line-1);border-radius:2px;
+         padding:3px 8px;white-space:nowrap;cursor:pointer;background:none;font-family:var(--ui)}
+  .plate:hover{border-color:var(--text-1);color:var(--text-1)}
+  @media(max-width:1150px){#navplate{display:none}}
+
+  header{padding:1.6rem clamp(1rem,4vw,3rem) .4rem}
+  h1{font-size:22px;margin:0 0 .25rem;font-weight:600;letter-spacing:-.01em}
+  .sub{color:var(--text-2);font-size:14px;max-width:64ch;margin:0}
+  .note{font-size:12.5px;color:var(--text-3)}
+  main{padding:.4rem clamp(1rem,4vw,3rem) 4rem}
+  .explore{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:1.5rem}
+  @media(max-width:860px){.explore{grid-template-columns:1fr}}
+  section{min-width:0}
+  /* engraved labels */
+  h2,.lbl{font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+          color:var(--text-3);font-weight:600}
+  h2{margin:.2rem 0 .8rem}
+  .lbl{margin-right:.3rem}
+
+  /* ---- filters: switch keys. Filled square = included, hollow = excluded ---- */
+  .filters{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
+           padding:.6rem clamp(1rem,4vw,3rem)}
+  .filters .grp{display:flex;gap:.35rem;flex-wrap:wrap;align-items:center}
+  .chip{font-size:12.5px;border:1px solid var(--line-2);border-radius:2px;
+        padding:4px 10px;cursor:pointer;background:transparent;color:var(--text-2);
+        user-select:none;display:inline-flex;align-items:center;gap:6px}
+  .chip::before{content:"";width:6px;height:6px;background:var(--text-1);flex:none}
+  .chip:hover{border-color:var(--text-1)}
+  .chip.off{color:var(--text-3);border-color:var(--line-1)}
+  /* hollow marker border at text-3: the on/off state cue must pass 3:1 itself */
+  .chip.off::before{background:transparent;border:1px solid var(--text-3);
+                    width:5px;height:5px}
+  .g-curated{color:var(--curated);font-weight:400}
+  .g-mined{color:var(--mined);font-weight:400}
+  .g-generated{color:var(--generated);font-weight:400}
+  .removed{font-size:11px;color:var(--review);margin-left:.3rem}
+
+  /* ---- heatmap: the grille. Composition reads in the dial line above. ---- */
+  .dial{font-size:12.5px;color:var(--text-2);background:var(--panel);
+        border:1px solid var(--line-1);border-radius:2px;padding:5px 9px;
+        margin:0 0 8px;min-height:28px;font-variant-numeric:tabular-nums}
+  table.heat{border-collapse:separate;border-spacing:2px;font-family:var(--ui)}
+  table.heat th{font-weight:400;padding:.2rem .3rem;text-align:center}
+  table.heat thead th{font-family:var(--ipa);font-size:14px;color:var(--text-2)}
+  table.heat th.row{font-size:11px;text-transform:uppercase;letter-spacing:.06em;
+                    color:var(--text-3);text-align:right;white-space:nowrap}
+  /* dim = excluded by the user's own filter: genuinely inactive (no tabindex,
+     no click) so the low contrast is the honest signal, not a broken control */
+  table.heat th.row.dim,td.cell.dim{opacity:.3}
+  td.cell.dim{cursor:default;outline:none}
+  td.cell.dim:hover{outline:none}
+  td.cell{position:relative;width:44px;height:44px;text-align:center;cursor:pointer;
+          vertical-align:middle;user-select:none;border-radius:2px;
+          outline:1px solid var(--line-1);outline-offset:-1px} /* drawn at rest: a keyed cell, not print */
+  td.cell:hover{outline:1px solid var(--text-1);outline-offset:-1px}
+  td.cell:focus-visible{outline:1.5px solid var(--text-1);outline-offset:-1.5px}
+  td.cell.on{outline:1.5px solid var(--text-1);outline-offset:-1.5px}
+  td.cell.on::after{content:"";position:absolute;top:3px;left:3px;width:5px;height:5px;
+                    background:var(--text-1)}
+  td.cell .n{font-size:14px;font-variant-numeric:tabular-nums;color:var(--text-1)}
+  td.cell.deep .n{color:var(--raised)}   /* numerals invert only on the deepest ramp step */
+  td.cell.deep.on::after{background:var(--raised)}
+  td.empty{background:transparent;cursor:default}
+  .legend{font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+          color:var(--text-3);margin-top:.6rem;display:flex;gap:1.2rem;flex-wrap:wrap}
+
+  /* ---- shape plates: specimen labels ---- */
+  .shapes{display:flex;flex-wrap:wrap;gap:.4rem;margin:.6rem 0}
+  .shape{position:relative;font-family:var(--ipa);font-size:17px;border:1px solid var(--line-2);
+         border-radius:2px;padding:5px 12px;cursor:pointer;background:var(--panel)}
+  .shape:hover{border-color:var(--text-1)}
+  .shape.sel{background:var(--pressed);outline:1.5px solid var(--text-1);outline-offset:-1.5px}
+  .shape.sel::after{content:"";position:absolute;top:3px;left:3px;width:5px;height:5px;
+                    background:var(--text-1)}
+
+  /* ---- list rows: hairlines only; hover darkens the line, never fills ---- */
+  .langrow{display:flex;align-items:center;gap:.6rem;min-height:44px;padding:.35rem 0;
+           border-bottom:1px solid var(--line-1);cursor:pointer}
+  .langrow:hover{border-bottom-color:var(--line-2)}
+  /* portal rows (raise the sheet / change view) close with a drawn chevron */
+  .langrow::after{content:"›";color:var(--text-3);font-size:14px;padding-left:.4rem}
+  .langrow:hover::after{color:var(--text-1)}
+  .langrow .name{flex:1}
+  .langrow .gloss14{flex:1 1 auto;min-width:0;font-size:14px;color:var(--text-2);
+                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .langrow .lname{font-size:13px;color:var(--text-2);white-space:nowrap}
+  .gloss14{font-size:14px;color:var(--text-2)}
+  .badge{font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+         padding:2px 6px;border-radius:2px;border:1px solid var(--line-1);
+         color:var(--text-3);white-space:nowrap}
+  .b-curated{color:var(--curated);border-color:currentColor}
+  .b-mined{color:var(--mined);border-color:currentColor}
+  .b-generated{color:var(--generated);border-color:currentColor}
+  .review{font-size:11px;color:var(--review)}
+  .conf{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3)}
+
+  #map svg{width:100%;height:auto;display:block}
+  .dothit{cursor:pointer}
+  .dothit:hover{stroke:var(--text-1);stroke-width:1px}
+
+  /* ---- transport keys ---- */
+  button.play{width:24px;height:24px;border:1px solid var(--line-2);border-radius:2px;
+              background:var(--panel);cursor:pointer;font-size:11px;color:var(--text-1);
+              padding:0;line-height:1}
+  button.play:hover{border-color:var(--text-1)}
+  button.play.inline{border:none;background:none;width:18px;height:auto;font-size:11px;
+                     color:var(--text-2)}
+  button.play.inline:hover{color:var(--text-1)}
+  /* .pin = compare on-ramp; .go = cross-view portal — same key, distinct names */
+  button.pin,button.go{font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+             border:1px solid var(--line-2);background:var(--panel);border-radius:2px;
+             padding:3px 8px;cursor:pointer;color:var(--text-2);font-family:var(--ui)}
+  button.pin:hover,button.go:hover{border-color:var(--text-1);color:var(--text-1)}
+
+  /* ---- bottom sheet: elevation drawn as a machined edge, not a shadow ---- */
+  #sheet{position:fixed;left:0;right:0;bottom:0;background:var(--raised);
+         border-top:1px solid var(--text-1);
+         padding:1rem clamp(1rem,4vw,3rem) 1.4rem;transform:translateY(100%);
+         transition:transform .16s ease-out;max-height:70vh;overflow:auto;z-index:9}
+  #sheet::before{content:"";position:absolute;top:2px;left:0;right:0;height:1px;
+                 background:var(--line-1)}
+  #sheet.open{transform:translateY(0)}
+  #sheet .close{float:right;cursor:pointer;color:var(--text-3);border:1px solid var(--line-2);
+                border-radius:2px;background:none;width:24px;height:24px;font-size:14px;
+                line-height:1;padding:0}
+  #sheet .close:hover{border-color:var(--text-1);color:var(--text-1)}
+  .sheet-hd{font-size:15px;font-weight:600;display:flex;align-items:center;gap:.6rem;
+            flex-wrap:wrap}
+  .sheet-hd .ipa{font-size:28px;font-weight:400;line-height:1.2}
+  .wordrow{display:flex;align-items:baseline;gap:.6rem;padding:.35rem 0;
+           border-bottom:1px solid var(--line-1);font-size:14px}
+  table.src{border-collapse:collapse;width:100%;max-width:60ch}
+  table.src th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+               color:var(--text-3);font-weight:600;text-align:left}
+  table.src th,table.src td{padding:.35rem .6rem;border-bottom:1px solid var(--line-1);
+                            font-size:14px;text-align:left}
+  .prose{max-width:66ch}
+  .prose h3{font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+            color:var(--text-3);font-weight:600;margin:1.4rem 0 .3rem}
+
+  /* ---- compare: one grid so rows align across every pinned column;
+     a fixed ledger column carries the field labels once ---- */
+  .cols{display:grid;overflow-x:auto;border:1px solid var(--line-2);border-radius:2px;
+        background:var(--panel);max-width:max-content}
+  .cols .clabel{font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+                color:var(--text-3);font-weight:600;padding:.5rem .7rem;
+                border-bottom:1px solid var(--line-1);display:flex;align-items:center}
+  .cols .ccell{font-size:13px;padding:.5rem .8rem;border-left:1px solid var(--line-2);
+               border-bottom:1px solid var(--line-1)}
+  .cols .last{border-bottom:none}
+  button.unpin{border:none;background:none;cursor:pointer;font-size:12.5px;
+               color:var(--text-2);padding:0;font-family:var(--ui)}
+  button.unpin:hover{color:var(--text-1);text-decoration:underline}
+
+  /* ---- pick lists ---- */
+  #conceptList,#langList,#regionList,#convList{max-height:70vh;overflow:auto}
+  .crow{position:relative;display:flex;align-items:center;gap:.6rem;min-height:44px;
+        padding:.35rem .4rem .35rem 16px;border-bottom:1px solid var(--line-1);cursor:pointer}
+  .crow:hover{border-bottom-color:var(--line-2)}
+  /* drawn at rest: hollow gutter square = selectable, solid = selected —
+     the same vocabulary the filter chips teach */
+  .crow:not(.sel)::before{content:"";position:absolute;left:4px;top:50%;width:5px;height:5px;
+                          border:1px solid var(--line-2);background:transparent;
+                          transform:translateY(-50%)}
+  .crow:hover::before{border-color:var(--text-1)}
+  .crow.sel{background:var(--pressed);outline:1.5px solid var(--text-1);outline-offset:-1.5px}
+  .crow.sel::before{content:"";position:absolute;left:4px;top:50%;width:6px;height:6px;
+                    background:var(--text-1);transform:translateY(-50%)}
+  #langList .crow .gloss{flex:0 0 12rem}
+  .crow .gloss{flex:0 0 8.5rem;font-weight:600}
+  .crow .cnt{flex:0 0 auto;font-size:12.5px;color:var(--text-2);white-space:nowrap;
+             font-variant-numeric:tabular-nums}
+
+  /* ---- the calibration strip (signature): no bar exists without graduation.
+     curated = solid green fill · mined = solid brass fill · generated = HOLLOW
+     (outlined, unfilled — the guessed portion of the gauge is literally not
+     inked in, rhyming with ○). The tabular count always accompanies it. ---- */
+  .bar{position:relative;flex:1;height:4px;min-width:3rem;font-size:0;white-space:nowrap;
+       background:linear-gradient(var(--line-1),var(--line-1)) 0 50%/100% 1px no-repeat}
+  .bar > i{display:inline-block;height:4px;vertical-align:top}
+  .bar .s-cur{background:var(--curated)}
+  .bar .s-min{background:var(--mined)}
+  .bar .s-gen{background:transparent;border-top:1px solid var(--generated);
+              border-bottom:1px solid var(--generated)}
+  .bar .s-data{background:var(--data)}    /* concept reach: quantity, not trust */
+  .bar.mini{display:block;flex:none;margin:3px 0 5px}
+
+  .conv{font-size:15px;margin:.2rem 0 .8rem}
+  /* the pane's subject is its largest text, never a note beside a label */
+  .convhd{font-size:22px;font-weight:600;margin:.1rem 0 .2rem}
+  /* epistemic caveat — a ruled note, deliberately NOT plated like the data
+     cards below it, so it reads as a proviso rather than data card #1 */
+  .convbanner{font-size:13px;color:var(--text-2);border:none;border-radius:0;
+              border-top:1px solid var(--text-1);border-bottom:1px solid var(--line-1);
+              padding:.5rem 0 .6rem;margin:0 0 .8rem;background:none}
+  .cshape{border:1px solid var(--line-2);border-radius:2px;padding:.5rem .7rem;
+          margin-bottom:.5rem;background:var(--panel)}
+  .cshape .hd{display:flex;align-items:center;gap:.5rem;font-size:14px}
+  /* card bodies: word (serif ink) before language (secondary) */
+  .cshape .langs{font-size:14px;color:var(--text-2);margin-top:.25rem;line-height:1.8}
+  .cshape .langs .ipa{color:var(--text-1);font-size:15px}
+  /* pressable serif is PLATED (never underlined — collides with diacritics);
+     bare serif = inert specimen */
+  .lshape{cursor:pointer;display:inline-block;border:1px solid var(--line-2);
+          border-radius:2px;padding:2px 10px;background:var(--raised)}
+  .lshape:hover{border-color:var(--text-1)}
+  /* a form entry (word + name) is one click target; the underline sits on the
+     grotesque name only — serif is never underlined */
+  .wlink{cursor:pointer}
+  .wlink .wname{text-decoration:underline;text-decoration-color:var(--line-2);
+                text-underline-offset:2px}
+  .wlink:hover .wname{text-decoration-color:var(--text-1)}
+  /* portal card: names ONE form — its whole surface opens the sheet */
+  .cshape.portal{cursor:pointer}
+  .cshape.portal:hover{border-color:var(--text-1)}
+  .cshape.portal .hd::after{content:"›";color:var(--text-3);font-size:14px;margin-left:auto}
+  .cshape.portal:hover .hd::after{color:var(--text-1)}
+
+  input.search{width:100%;max-width:24rem;font-family:var(--ui);font-size:13px;
+               height:32px;padding:0 .6rem;border:1px solid var(--line-2);border-radius:2px;
+               background:var(--raised);color:var(--text-1);margin-bottom:.6rem}
+  input.search::placeholder{color:var(--text-3)}
+  input.search:focus{border-color:var(--text-1);outline:1.5px solid var(--text-1);
+                     outline-offset:1px}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<nav>
+  <span class="brand">Open Monosyllabic</span>
+  <button data-route="meanings" class="active">Meanings</button>
+  <button data-route="explore">Sounds</button>
+  <button data-route="languages">Languages</button>
+  <button data-route="regions">Regions</button>
+  <button data-route="convergence">Look-alikes</button>
+  <span class="navsep" aria-hidden="true"></span>
+  <button data-route="compare">Compare<span id="pinBadge" class="pin-badge hidden">0</span></button>
+  <button data-route="about">About</button>
+  <button data-route="sources">Sources</button>
+  <button id="navplate" class="plate" title="the maker's plate — click for sources"></button>
+</nav>
+
+<div id="view-meanings">
+  <header>
+    <h1>One meaning, many tongues</h1>
+    <p class="sub">The world&rsquo;s languages pack meaning into tiny open syllables. Pick a meaning to see the
+      words for it across languages &mdash; and how few sound-shapes they use.
+      <span id="mstamp" class="note"></span></p>
+  </header>
+  <main class="explore">
+    <section>
+      <h2>Meanings <span class="note">most widely shared first</span></h2>
+      <input id="conceptSearch" class="search" placeholder="search a meaning — e.g. water, sleep, night">
+      <div id="conceptList"></div>
+    </section>
+    <section>
+      <h2>Words for this meaning <span id="conceptSel" class="note"></span></h2>
+      <div id="conceptDetail"><p class="note">Pick a meaning to see its words across the globe.</p></div>
+    </section>
+  </main>
+</div>
+
+<div id="view-explore" class="hidden">
+  <header>
+    <h1>Open monosyllables across the globe</h1>
+    <p class="sub">One-syllable words that end in a vowel. Pick a sound-shape to see every language that has it.
+      <span id="stamp" class="note"></span></p>
+  </header>
+  <div class="filters" id="filters"></div>
+  <main class="explore">
+    <section>
+      <h2>Shapes by onset &amp; vowel <span id="drill" class="note"></span></h2>
+      <div id="heat"></div>
+      <div class="legend">
+        <span>tier: <b class="g-curated">&#9679;</b> curated
+          <b class="g-mined">&#9680;</b> mined
+          <b class="g-generated">&#9675;</b> generated</span>
+        <span>cell = languages with that shape &middot; the dial line reads its composition &mdash; never a bare count</span>
+      </div>
+    </section>
+    <section>
+      <h2>Across the globe <span id="selshape" class="note"></span></h2>
+      <div id="map"></div>
+      <div id="langs"></div>
+      <p class="note" id="mapnote"></p>
+    </section>
+  </main>
+</div>
+
+<div id="view-languages" class="hidden">
+  <header>
+    <h1>Every language, sound by sound</h1>
+    <p class="sub">Pick a language to see all of its open monosyllables &mdash; the sound-shapes it uses,
+      each with its source tier and structural notes. <span id="lstamp" class="note"></span></p>
+  </header>
+  <main class="explore">
+    <section>
+      <h2>Languages <span class="note">most open-syllable shapes first</span></h2>
+      <input id="langSearch" class="search" placeholder="search a language or region — e.g. Yoruba, Pacific">
+      <div id="langList"></div>
+    </section>
+    <section>
+      <h2>Open monosyllables <span id="langSel" class="note"></span></h2>
+      <div id="langDetail"><p class="note">Pick a language to see its open monosyllables.</p></div>
+    </section>
+  </main>
+</div>
+
+<div id="view-regions" class="hidden">
+  <header>
+    <h1>Open syllables by region</h1>
+    <p class="sub">Browse the world&rsquo;s macro-regions. Pick one to see how many of its languages carry
+      open monosyllables, and how many distinct shapes they share. <span id="rstamp" class="note"></span></p>
+  </header>
+  <main class="explore">
+    <section>
+      <h2>Regions <span class="note">most languages first</span></h2>
+      <div id="regionList"></div>
+    </section>
+    <section>
+      <h2>Languages here <span id="regionSel" class="note"></span></h2>
+      <div id="regionDetail"><p class="note">Pick a region to see its languages.</p></div>
+    </section>
+  </main>
+</div>
+
+<div id="view-convergence" class="hidden">
+  <header>
+    <h1>Same sound, same meaning &mdash; by coincidence</h1>
+    <p class="sub">Where two or more languages land on the same open syllable for the same meaning.
+      Coincidence or shared history? This view shows the matches and lets you judge &mdash; it never scores them.
+      <span id="convStamp" class="note"></span></p>
+  </header>
+  <main class="explore">
+    <section>
+      <h2>Meanings <span class="note">most widely shared first</span></h2>
+      <input id="convSearch" class="search" placeholder="search a meaning — e.g. mother, water, two">
+      <div id="convList"></div>
+    </section>
+    <section>
+      <h2>Shared shapes <span id="convSel" class="note"></span></h2>
+      <div id="convDetail"><p class="note">Pick a meaning to see the sound-shapes languages share for it.</p></div>
+    </section>
+  </main>
+</div>
+
+<div id="view-compare" class="hidden">
+  <header>
+    <h1>Compare</h1>
+    <p class="sub">The same shape across languages, side by side. Juxtaposition only &mdash; no similarity
+      score: for words this short, look-alikes are overwhelmingly chance.</p>
+  </header>
+  <main><div id="compare"></div></main>
+</div>
+<div id="view-about" class="hidden">
+  <header><h1>About &amp; methodology</h1></header>
+  <main><div id="about" class="prose"></div></main>
+</div>
+<div id="view-sources" class="hidden">
+  <header><h1>Data sources</h1>
+    <p class="sub">Every form cites its source(s). <span id="srcStamp" class="note"></span></p></header>
+  <main><div id="sources" class="prose"></div></main>
+</div>
+
+<div id="sheet"><button class="close" id="sheetClose" aria-label="close">&times;</button><div id="sheetBody"></div></div>
+<audio id="player"></audio>
+<script src="app.js"></script>
+</body>
+</html>
