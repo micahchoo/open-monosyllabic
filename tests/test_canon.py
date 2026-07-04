@@ -93,6 +93,7 @@ class TestCanonCorpus(unittest.TestCase):
         self.assertFalse(is_clean_ipa("wa+ba"), "morpheme boundary")
         # a tone-digit-labelled polysyllable canonicalizes to an ASCII-cap cover string → rejected
         self.assertFalse(is_clean_ipa(canonicalize("A31nA31dzɨ").segmental))
+        self.assertFalse(is_clean_ipa("◌jɐ"), "dotted-circle placeholder (Wiktionary sign entry)")
 
 
 if __name__ == "__main__":

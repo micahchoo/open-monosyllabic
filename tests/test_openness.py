@@ -62,6 +62,16 @@ class TestOpennessCorpus(unittest.TestCase):
         # ADR-0001: vowel-less syllabic consonants are excluded.
         self.assertFalse(classify_openness("m̩").is_open)
 
+    def test_syllabic_nucleus_beside_vowel_is_out(self):
+        # 2026-07-04 leak: the syllabicity mark folded into its consonant token, so
+        # kr̩ba (= kr̩ + ba, two syllables) shipped as an "open monophthong".
+        self.assertFalse(classify_openness("kr̩ba").is_open)
+        self.assertFalse(classify_openness("r̩kʂi").is_open)
+
+    def test_voiceless_ring_is_not_syllabicity(self):
+        # U+0325 (voiceless) must not trip the syllabic-nucleus exclusion.
+        self.assertTrue(classify_openness("l̥i").is_open)
+
 
 if __name__ == "__main__":
     unittest.main()

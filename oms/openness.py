@@ -65,10 +65,23 @@ def _classify(token: str) -> str:
     return "C"
 
 
+_SYLLABIC_MARKS = {"̩", "̍"}  # combining vertical line below / above
+
+
 def classify_openness(form: str) -> Openness:
     """Classify a canonicalized, tone-blind single-syllable form."""
     tokens = _segment(form)
     types = [_classify(t) for t in tokens]
+
+    # A consonant/glide carrying a syllabicity mark IS a nucleus (kr̩ba = kr̩ + ba).
+    # Alone -> consonant nucleus (out per ADR-0001); next to a vowel -> a second
+    # syllable (also out). Without this check the mark folds into the token and a
+    # syllabic nucleus masquerades as an onset consonant (2026-07-04 leak: kr̩ba,
+    # r̩kʂi shipped as "open monophthongs").
+    if any(ty in ("C", "G") and any(m in tok for m in _SYLLABIC_MARKS)
+           for tok, ty in zip(tokens, types)):
+        return Openness(False, HIGH, "none", False,
+                        "syllabic consonant nucleus — excluded (ADR-0001)")
 
     if "V" not in types:
         return Openness(False, HIGH, "none", False,

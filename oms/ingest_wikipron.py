@@ -15,6 +15,7 @@ Words/glosses are absent, so these languages appear as Forms with no example Wor
 from __future__ import annotations
 
 import json
+import unicodedata
 from pathlib import Path
 
 SOURCE = {"id": "wikipron", "tier": "mined", "license": "CC-BY-SA-3.0"}
@@ -38,6 +39,15 @@ def _is_noise_word(w: str) -> bool:
     # in these scripts. Latin/African one-char words (Yoruba 'ó') are unaffected.
     if len(w) == 1 and 0x0900 <= ord(w) < 0x0E00:
         return True
+    # Conjunct/ligature pages (ന്ധ "ligature of na and dha"): all-Brahmic, joined by
+    # a virama, with NO vowel anywhere (no independent vowel, no vowel sign). Real
+    # words always carry a vowel character or skip the virama (inherent vowel: कल);
+    # a vowel-less virama cluster is a letter entry whose "pronunciation" is just
+    # the letter name with an epenthetic vowel (shipped /n̪d̪ʱɐ/ as a Malayalam word).
+    if w and all(0x0900 <= ord(c) < 0x0E00 for c in w):
+        names = [unicodedata.name(c, "") for c in w]
+        if any("VIRAMA" in n for n in names) and not any("VOWEL" in n for n in names):
+            return True
     return False
 
 

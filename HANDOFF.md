@@ -439,3 +439,18 @@ ROCm 7.2.2 installed, 15T free):**
   chain is COMPLETE — catalog: 1,926 langs / 13,960 shapes / 53,547 postings, mined-tier meanings
   attached (mal 55/66, hin 188/309, mar 43/46), espeak coverage 95% (5% honest no-clip long tail).
   Everything verified except in-browser click-through — user has the live browser.**
+- **SYLLABIC-CONSONANT + LIGATURE HYGIENE (2026-07-04, user report: /n̪d̪ʱɐ/ "not a word").** THREE
+  fixes: (1) `openness.classify_openness` — the syllabicity mark (̩ U+0329 / ̍ U+030D) folded into
+  its consonant token so syllabic nuclei masqueraded as onset consonants (kr̩ba/r̩kʂi shipped as
+  "open monophthongs"); now any C/G token carrying a syllabic mark → excluded (ADR-0001: consonant
+  nucleus, or a second syllable). Voiceless ring U+0325 (l̥i) unaffected — tested. (2)
+  `ingest_wikipron._is_noise_word` — Wiktionary CONJUNCT/LIGATURE pages (ന്ധ "ligature of na+dha",
+  pron = letter name with epenthetic ɐ) now dropped: all-Brahmic + contains VIRAMA + NO vowel char
+  (independent or sign). Real words kept: कल (inherent vowel, no virama), क्या/हिन्दी (vowel signs) —
+  tested (new tests/test_ingest_wikipron.py). (3) `canon._NON_IPA` += ◌ U+25CC (dotted-circle
+  placeholder leaked into "◌jɐ"). Suite: 27 tests OK. REBUILD: 13,819 shapes / 53,346 postings
+  (-141 junk shapes, 206 stale chunks swept); all 9 reported junk shapes verified GONE; Malayalam
+  66→41 shapes, list now reads as real lexicon (puː t̪iː n̪iː ʃriː + genuine loanwords skruː bɭuː).
+  Audio re-render bg (/tmp/audio_rebuild3.log) — orphan sweep will clear removed shapes' clips.
+- **HYGIENE RENDER LANDED (2026-07-04): 13,107 clips (5,510 lossy), 131 stale clips swept (the
+  removed junk shapes' audio). Chain complete — catalog 1,926 langs / 13,819 shapes, tests 27 OK.**

@@ -54,7 +54,9 @@ _TONE_ALL = _TONE | _TONE_COMBINING | _TONE_ASCII
 # UPPERCASE letters (A-Z) — real IPA is lowercase; ASCII caps are cover symbols
 # (V=vowel, N=nasal) or tone-class labels, never segments. (IPA small-caps like ɪ ɴ ʀ
 # are separate non-ASCII codepoints and are unaffected.)
-_NON_IPA = set("*+=|/\\<>[]{}()~^?!") | {chr(c) for c in range(0x41, 0x5B)}
+_NON_IPA = set("*+=|/\\<>[]{}()~^?!◌") | {chr(c) for c in range(0x41, 0x5B)}
+# ◌ U+25CC: dotted-circle placeholder from Wiktionary combining-sign entries —
+# leaked into shapes like "◌jɐ" (2026-07-04); a placeholder is never a segment.
 
 
 def is_clean_ipa(segmental: str) -> bool:
