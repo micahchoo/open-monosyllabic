@@ -122,10 +122,14 @@ async function boot() {
   if (!(await applyHash())) {
     // no deep link: open both hero views on the payoff, never an empty pane —
     // the pressed row/cell also teaches the selection grammar (ux-design.md §Landing)
-    if ((CORE.concepts || []).length) await selectConcept(CORE.concepts[0].ckey, true);
+    // Both branches below await a fetch (loadConcept / ensureShape), so a user can
+    // click a meaning or a heatmap cell while this default selection is still in
+    // flight. Re-check state right before committing so a real click always wins
+    // over this fallback, instead of the fallback silently clobbering it on resolve.
+    if ((CORE.concepts || []).length && !state.concept) await selectConcept(CORE.concepts[0].ckey, true);
     const top = CORE.shapes.slice().sort((a, b) =>
       (CORE.postings[b.shape] || []).length - (CORE.postings[a.shape] || []).length)[0];
-    if (top) {
+    if (top && !state.onset) {
       state.onset = top.onset_class; state.nuc = top.nucleus_bucket; state.shape = top.shape;
       renderHeatmap(); await ensureShape(top.shape); renderShapes(); drawMap(); renderLangs();
     }
@@ -425,6 +429,7 @@ async function selectConcept(ckey, skipHash) {
   renderMeanings(document.getElementById("conceptSearch").value);
   const box = document.getElementById("conceptDetail"), head = document.getElementById("conceptSel");
   const d = await loadConcept(ckey);
+  if (state.concept !== ckey) return; // a newer selection won the race while this one awaited
   if (!d) { box.innerHTML = `<p class="note">no data for this meaning</p>`; return; }
   head.textContent = `— ‘${d.gloss}’`;
   const byShape = new Map();
@@ -642,6 +647,7 @@ async function selectConvMeaning(ckey, skipHash) {
   renderConvMeanings(document.getElementById("convSearch").value);
   const box = document.getElementById("convDetail"), head = document.getElementById("convSel");
   const d = await loadConcept(ckey);
+  if (state.convMeaning !== ckey) return; // a newer selection won the race while this one awaited
   if (!d) { box.innerHTML = CONV_BANNER + `<p class="note">no data for this meaning</p>`; return; }
   head.textContent = `— ‘${d.gloss}’`;
   const byShape = new Map();
