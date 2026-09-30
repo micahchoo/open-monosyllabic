@@ -133,11 +133,17 @@
   td.cell.deep .n{color:var(--raised)}   /* numerals invert only on the deepest ramp step */
   td.cell.deep.on::after{background:var(--raised)}
   td.empty{background:transparent;cursor:default}
+  /* thin = under 5 families: drawn hollow, no ramp colour, no verdict */
+  td.cell.thin{background:transparent;outline:1px dashed var(--line-2);outline-offset:-1px}
+  td.cell.thin .n{color:var(--text-3)}
   .legend{font-size:11px;letter-spacing:.05em;text-transform:uppercase;
           color:var(--text-3);margin-top:.6rem;display:flex;gap:1.2rem;flex-wrap:wrap}
 
   /* ---- shape plates: specimen labels ---- */
   .shapes{display:flex;flex-wrap:wrap;gap:.4rem;margin:.6rem 0}
+  /* the chip's count is attribution, in the UI face, never the IPA serif */
+  .shape .sc{font-family:var(--ui);font-size:11px;color:var(--text-3);margin-left:.35rem;font-variant-numeric:tabular-nums}
+  .shapes .rare{align-self:center}
   .shape{position:relative;font-family:var(--ipa);font-size:17px;border:1px solid var(--line-2);
          border-radius:2px;padding:5px 12px;cursor:pointer;background:var(--panel)}
   .shape:hover{border-color:var(--text-1)}
@@ -169,6 +175,13 @@
   #map svg{width:100%;height:auto;display:block}
   .dothit{cursor:pointer}
   .dothit:hover{stroke:var(--text-1);stroke-width:1px}
+  /* one grid for all rows, so every bar starts and ends on the same lines */
+  .regshare{display:grid;grid-template-columns:max-content minmax(3rem,1fr) max-content;
+            gap:5px .7rem;align-items:center;margin:.6rem 0 .9rem;font-size:12.5px}
+  .regshare .rs{display:contents}
+  .regshare .rsk{color:var(--text-2)}
+  .regshare .rsn{color:var(--text-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .regshare .bar{height:6px}.regshare .bar > i{height:6px}
 
   /* ---- transport keys ---- */
   button.play{width:24px;height:24px;border:1px solid var(--line-2);border-radius:2px;
@@ -256,6 +269,10 @@
               border-bottom:1px solid var(--generated)}
   .bar .s-data{background:var(--data)}    /* concept reach: quantity, not trust */
   .bar.mini{display:block;flex:none;margin:3px 0 5px}
+  /* 95% interval over a rate bar: a hairline bracket from lower to upper bound */
+  .bar .ci{position:absolute;top:-3px;height:10px;border-left:1px solid var(--text-2);
+           border-right:1px solid var(--text-2);
+           background:linear-gradient(var(--text-2),var(--text-2)) 0 50%/100% 1px no-repeat}
 
   .conv{font-size:15px;margin:.2rem 0 .8rem}
   /* the pane's subject is its largest text, never a note beside a label */
@@ -288,13 +305,20 @@
   .cshape.portal .hd::after{content:"›";color:var(--text-3);font-size:14px;margin-left:auto}
   .cshape.portal:hover .hd::after{color:var(--text-1)}
 
-  input.search{width:100%;max-width:24rem;font-family:var(--ui);font-size:13px;
+  input.search,select.search{width:100%;max-width:24rem;font-family:var(--ui);font-size:13px;
                height:32px;padding:0 .6rem;border:1px solid var(--line-2);border-radius:2px;
                background:var(--raised);color:var(--text-1);margin-bottom:.6rem}
   input.search::placeholder{color:var(--text-3)}
-  input.search:focus{border-color:var(--text-1);outline:1.5px solid var(--text-1);
+  input.search:focus,select.search:focus{border-color:var(--text-1);outline:1.5px solid var(--text-1);
                      outline-offset:1px}
   .hidden{display:none}
+  .pickrow{display:flex;flex-wrap:wrap;gap:.5rem;max-width:24rem;margin:0 0 .6rem}
+  .funnel svg{width:100%;height:auto;display:block;max-width:36rem}
+  .funnel .fdot{cursor:pointer}
+  .funnel .note{margin:.2rem 0 .8rem}
+  .pickrow select{flex:1 1 7rem}
+  .pickrow select{flex:1;min-width:0;margin:0}
+  .caveat{font-size:13px;color:var(--text-2);border-left:2px solid var(--line-2);padding:.1rem 0 .1rem .6rem;margin:.25rem 0 1rem}
 </style>
 </head>
 <body>
@@ -303,8 +327,6 @@
   <button data-route="meanings" class="active">Meanings</button>
   <button data-route="explore">Sounds</button>
   <button data-route="languages">Languages</button>
-  <button data-route="regions">Regions</button>
-  <button data-route="convergence">Look-alikes</button>
   <span class="navsep" aria-hidden="true"></span>
   <button data-route="compare">Compare<span id="pinBadge" class="pin-badge hidden">0</span></button>
   <button data-route="about">About</button>
@@ -315,14 +337,18 @@
 <div id="view-meanings">
   <header>
     <h1>One meaning, many tongues</h1>
-    <p class="sub">The world&rsquo;s languages pack meaning into tiny open syllables. Pick a meaning to see the
-      words for it across languages &mdash; and how few sound-shapes they use.
+    <p class="sub">Pick a meaning to see the open syllables languages use for it. Shapes shared by the most
+      language families come first: agreement across families may be chance, agreement inside one family is
+      usually shared history.
       <span id="mstamp" class="note"></span></p>
   </header>
   <main class="explore">
     <section>
-      <h2>Meanings <span class="note">most widely shared first</span></h2>
+      <h2>Meanings</h2>
       <input id="conceptSearch" class="search" placeholder="search a meaning — e.g. water, sleep, night">
+      <div class="pickrow"><select id="conceptSort" class="search" aria-label="order">
+        <option value="reach">most widely shared first</option>
+        <option value="beyond">shared beyond chance first</option></select></div>
       <div id="conceptList"></div>
     </section>
     <section>
@@ -344,10 +370,8 @@
       <h2>Shapes by onset &amp; vowel <span id="drill" class="note"></span></h2>
       <div id="heat"></div>
       <div class="legend">
-        <span>tier: <b class="g-curated">&#9679;</b> curated
-          <b class="g-mined">&#9680;</b> mined
-          <b class="g-generated">&#9675;</b> generated</span>
-        <span>cell = languages with that shape &middot; the dial line reads its composition &mdash; never a bare count</span>
+        <span id="tierLegend"></span>
+        <span>cell = language families with that shape &middot; dashed = under 5 families, too few to judge &middot; the dial reads languages, sources and the ratio to chance</span>
       </div>
     </section>
     <section>
@@ -362,56 +386,25 @@
 <div id="view-languages" class="hidden">
   <header>
     <h1>Every language, sound by sound</h1>
-    <p class="sub">Pick a language to see all of its open monosyllables &mdash; the sound-shapes it uses,
-      each with its source tier and structural notes. <span id="lstamp" class="note"></span></p>
+    <p class="sub">Each language is read against the words its sources give: <b>12 of 187</b> means 12 open
+      monosyllables among 187 words examined; the range beside it is a 95% interval, and languages rank by its low end.
+      <span id="lstamp" class="note"></span></p>
   </header>
   <main class="explore">
     <section>
-      <h2>Languages <span class="note">most open-syllable shapes first</span></h2>
-      <input id="langSearch" class="search" placeholder="search a language or region — e.g. Yoruba, Pacific">
+      <h2>Languages <span class="note">highest share of open monosyllables first</span></h2>
+      <input id="langSearch" class="search" placeholder="search a language — e.g. Yoruba, Hmong">
+      <div class="pickrow">
+        <select id="langRegion" class="search" aria-label="region"></select>
+        <select id="langFamily" class="search" aria-label="family"></select>
+        <select id="langSample" class="search" aria-label="kind of sample"></select>
+      </div>
+      <div id="langFunnel" class="funnel"></div>
       <div id="langList"></div>
     </section>
     <section>
       <h2>Open monosyllables <span id="langSel" class="note"></span></h2>
       <div id="langDetail"><p class="note">Pick a language to see its open monosyllables.</p></div>
-    </section>
-  </main>
-</div>
-
-<div id="view-regions" class="hidden">
-  <header>
-    <h1>Open syllables by region</h1>
-    <p class="sub">Browse the world&rsquo;s macro-regions. Pick one to see how many of its languages carry
-      open monosyllables, and how many distinct shapes they share. <span id="rstamp" class="note"></span></p>
-  </header>
-  <main class="explore">
-    <section>
-      <h2>Regions <span class="note">most languages first</span></h2>
-      <div id="regionList"></div>
-    </section>
-    <section>
-      <h2>Languages here <span id="regionSel" class="note"></span></h2>
-      <div id="regionDetail"><p class="note">Pick a region to see its languages.</p></div>
-    </section>
-  </main>
-</div>
-
-<div id="view-convergence" class="hidden">
-  <header>
-    <h1>Same sound, same meaning &mdash; by coincidence</h1>
-    <p class="sub">Where two or more languages land on the same open syllable for the same meaning.
-      Coincidence or shared history? This view shows the matches and lets you judge &mdash; it never scores them.
-      <span id="convStamp" class="note"></span></p>
-  </header>
-  <main class="explore">
-    <section>
-      <h2>Meanings <span class="note">most widely shared first</span></h2>
-      <input id="convSearch" class="search" placeholder="search a meaning — e.g. mother, water, two">
-      <div id="convList"></div>
-    </section>
-    <section>
-      <h2>Shared shapes <span id="convSel" class="note"></span></h2>
-      <div id="convDetail"><p class="note">Pick a meaning to see the sound-shapes languages share for it.</p></div>
     </section>
   </main>
 </div>
@@ -436,6 +429,11 @@
 
 <div id="sheet"><button class="close" id="sheetClose" aria-label="close">&times;</button><div id="sheetBody"></div></div>
 <audio id="player"></audio>
-<script src="app.js"></script>
+<script>
+  // Load the script with a fresh query so a plain reload never runs a stale copy
+  // against a newer page (python -m http.server sends no cache headers; on
+  // 2026-09-29 a cached app.js broke boot against a changed index.html).
+  { const s = document.createElement("script"); s.src = "app.js?v=" + Date.now(); document.body.appendChild(s); }
+</script>
 </body>
 </html>

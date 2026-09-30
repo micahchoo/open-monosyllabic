@@ -61,17 +61,28 @@ color IS the signal.
    one step down, never demoted to a `--text-3` note) → LANGUAGE (attribution,
    smaller than both). The pane's subject (`.convhd`) is its largest text.
    Language-first is correct only where the selection target IS the
-   language/region entity: the Languages and Regions pickers.
+   language entity: the Languages picker (region and family are filters on it).
 10. **Click contract: a surface opens the thing it names; inner keys always
    win over the container.** Picker rows (`.crow`) select in place. A row or
    card that names ONE form (Sounds `.langrow`, Languages `.cshape.portal`,
    lit map dots, card entries `.wlink` = word+name) opens the form sheet from
-   its whole surface. A row that names a language (Regions `.langrow`,
+   its whole surface. A row that names a language (
    Compare's language field) opens the Languages view. Cards that merely GROUP
-   forms (Meanings/Look-alikes shape cards) are leaf containers: no pressable
+   forms (Meanings shape cards) are leaf containers: no pressable
    styling on the container — only their entries and keys act. Never give the
    same visual component two different click meanings without a different
    carrier (portal cards wear the `›`; leaf cards wear nothing).
+
+## Amendment 2026-09-29 — what the data actually varies on
+
+The catalog is ~98% curated, so a tier badge on every row carried no signal.
+Rows now wear a tier mark only when it is the exception (`tierMark` in app.js:
+mined / generated); legends say "no mark = curated". Composition text and the
+calibration strip are unchanged. Two counts now travel with every language
+count: its **families** (`spreadHTML`: "N languages · F families", or "all
+Austronesian") and, per language, its **sample** (`yieldText`: "12 of 187
+words"). Regions and Look-alikes are no longer views: Regions is a filter on
+Languages, Look-alikes is Meanings ranked by family spread.
 
 ## Tokens (defined in web/index.html `:root`)
 
