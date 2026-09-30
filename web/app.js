@@ -15,9 +15,21 @@ const TIER_GLYPH = ["●", "◐", "○"];
 // precomputed to literal hexes (no runtime color-mix in a no-build static site).
 // Numerals stay dark through step 3; they invert only on the deepest step (.deep).
 const RAMP = ["#DDE4E2", "#C0D2D3", "#98B8BD", "#62909D", "#2F5E6C"];
-const rampStep = r => r < 0.5 ? 0 : r < 0.9 ? 1 : r < 1.3 ? 2 : r < 1.8 ? 3 : 4;
+// A cell's colour is its EVIDENCE: the number of language families with a shape
+// there (roadmap E2). Before 2026-09-29 it was the ratio to chance, so the
+// darkest cells held 1–2 languages. Under MIN_FAMILIES a cell is drawn hollow
+// and gives no verdict: too few families to compare with chance.
+const MIN_FAMILIES = 5;
+const FAMILY_STEPS = [5, 10, 20, 30, 40];
+const rampStep = f => FAMILY_STEPS.filter(t => f >= t).length - 1;   // -1 = hollow
+// The ratio is read, not seen; near 1 its verdict means nothing, so it says so.
+const verdict = r => r > 1.25 ? `${r.toFixed(1)}× commoner than chance` : r < 0.8 ? `${r.toFixed(2)}× — rarer than chance` : `about as common as chance (${r.toFixed(2)}×)`;
 // Tier composition with glyphs in their tier colors — the text twin of the strip.
 const tierGlyphHTML = i => `<b class="g-${TIER[i]}">${TIER_GLYPH[i]}</b>`;
+// Nearly every form is curated, so a curated badge on every row says nothing.
+// A row wears its tier only when it is the exception (mined / generated); the
+// legend and the sheet say that unmarked = curated. Guesses stay visible.
+const tierMark = t => t ? `<span class="badge b-${TIER[t]}">${TIER_GLYPH[t]} ${TIER[t]}</span>` : "";
 const tierCompHTML = comp => comp.map((c, i) => c ? `${c}${tierGlyphHTML(i)}` : "").filter(Boolean).join(" ");
 // Calibration-strip segments: curated/mined solid, generated hollow (unfilled).
 // widthPct = this row's share of the list maximum; comp = [curated, mined, generated].
@@ -29,43 +41,70 @@ function stripSegs(comp, widthPct) {
   return comp.map((c, i) => c ? `<i class="${cls[i]}" style="width:${(widthPct * c / total).toFixed(2)}%"></i>` : "").join("");
 }
 
+// Revalidate every data file: a rebake must show on a plain reload. The server
+// answers an unchanged file with a 304, so this costs a header, not a download.
+const getJSON = async url => (await fetch(url, { cache: "no-cache" })).json();
 let CORE, FORMS = {}, AUDIO = {}, CONCEPTS = {}, BASE = "", CHUNKED = false;
+// Tiers that occur in this build. A tier with no forms gets no filter and no
+// legend entry: offering to hide "generated" when there is none implied there was.
+let TIERS_PRESENT = [];
+
+// Families. Languages in one family share history, so a count of languages is
+// always read beside its count of families: 129 Austronesian languages agreeing
+// on /rua/ was one fact, not 129 (CONTEXT.md "Family").
+const familyOf = li => CORE.languages[li].family || "";
+function families(lis) { return new Set([...lis].map(familyOf).filter(Boolean)); }
+// "N languages · F families", or "N languages, all Austronesian" when F is 1.
+function spreadHTML(lis) {
+  lis = [...lis];   // callers pass iterators (Map keys); both counts need a pass
+  const n = new Set(lis).size, fams = families(lis);
+  const langs = `<b>${n}</b> language${n === 1 ? "" : "s"}`;
+  if (n > 1 && fams.size === 1) return `${langs}, all ${[...fams][0]}`;
+  return fams.size > 1 ? `${langs} · <b>${fams.size}</b> families` : langs;
+}
 
 // DataStore contract (§10): blob build preloads forms.json; chunked build fetches
 // per-shape chunks on demand. slugOf matches oms/bake._slug.
 function slugOf(shape) { return "u" + [...shape].map(c => c.codePointAt(0).toString(16).padStart(4, "0")).join("-"); }
 async function ensureShape(shape) {
   if (!CHUNKED || Object.values(FORMS).some(f => f.shape === shape)) return;
-  try { Object.assign(FORMS, await (await fetch(`${BASE}/shape/${slugOf(shape)}.json`)).json()); } catch {}
+  try { Object.assign(FORMS, await getJSON(`${BASE}/shape/${slugOf(shape)}.json`)); } catch {}
 }
 async function loadConcept(ckey) {
   if (CONCEPTS[ckey]) return CONCEPTS[ckey];
-  try { CONCEPTS[ckey] = await (await fetch(`${BASE}/concept/${ckey}.json`)).json(); } catch { CONCEPTS[ckey] = null; }
+  try { CONCEPTS[ckey] = await getJSON(`${BASE}/concept/${ckey}.json`); } catch { CONCEPTS[ckey] = null; }
   return CONCEPTS[ckey];
 }
 const state = {
-  onset: null, nuc: null, shape: null, concept: null, language: null, region: null, convMeaning: null,
+  onset: null, nuc: null, shape: null, concept: null, language: null,
   onsetOn: new Set(ONSET_ORDER), tierOn: new Set(TIER),
   pins: [], route: "meanings",
+  langRegion: null, langFamily: null, langSample: null,   // null = all; "" is a real value (Unlisted)
 };
 
 async function boot() {
-  const cur = await (await fetch("../data/current.json")).json();
+  const cur = await getJSON("../data/current.json");
   BASE = `../data/${cur.dir || cur.version}`;
   CHUNKED = !!cur.chunked;
-  CORE = await (await fetch(`${BASE}/core.json`)).json();
-  FORMS = CHUNKED ? {} : await (await fetch(`${BASE}/forms.json`)).json();
-  try { AUDIO = await (await fetch("audio/manifest.json")).json(); } catch { AUDIO = {}; }
-  try { LAND = decodeLand(await (await fetch("land-110m.json")).json()); } catch { LAND = null; }
+  CORE = await getJSON(`${BASE}/core.json`);
+  // A Glottolog name can cover two glottocodes (Tuki ×3): the code tells them apart.
+  const nameCount = new Map();
+  for (const L of CORE.languages) nameCount.set(L.name, (nameCount.get(L.name) || 0) + 1);
+  for (const L of CORE.languages) if (nameCount.get(L.name) > 1) L.name = `${L.name} (${L.glottocode})`;
+  const seen = new Set(Object.values(CORE.postings).flatMap(ps => ps.map(p => p[1])));
+  TIERS_PRESENT = TIER.map((_, i) => i).filter(i => seen.has(i));
+  document.getElementById("tierLegend").innerHTML = "tier: " +
+    TIERS_PRESENT.map(i => `${tierGlyphHTML(i)} ${TIER[i]}`).join(" ") + " &middot; a row with no mark is curated";
+  FORMS = CHUNKED ? {} : await getJSON(`${BASE}/forms.json`);
+  try { AUDIO = await getJSON("audio/manifest.json"); } catch { AUDIO = {}; }
+  try { LAND = decodeLand(await getJSON("land-110m.json")); } catch { LAND = null; }
   document.getElementById("stamp").textContent =
     `data as of ${cur.version} · ${CORE.languages.length} languages · ${CORE.shapes.length} shapes` +
     (CHUNKED ? " (real datasets)" : " (seed)");
   document.getElementById("mstamp").textContent =
     `${(CORE.concepts || []).length} meanings · ${CORE.languages.length} languages`;
-  document.getElementById("lstamp").textContent = `${CORE.languages.length} languages`;
-  document.getElementById("rstamp").textContent =
-    `${regionIndex().length} regions · ${CORE.languages.length} languages`;
-  document.getElementById("convStamp").textContent = `${(CORE.concepts || []).length} meanings`;
+  document.getElementById("lstamp").textContent =
+    `${CORE.languages.length} languages · ${families(CORE.languages.keys()).size} families`;
   // the maker's plate (wide screens; per-view stamps cover the rest): version,
   // languages by best source tier, shapes — even the stamp carries composition
   const plateComp = [0, 0, 0];
@@ -78,17 +117,18 @@ async function boot() {
     `data ${cur.version} · ${CORE.languages.length} languages · ${CORE.shapes.length} shapes · ${(CORE.sources || []).length} sources`;
   wireNav();
   renderMeanings();
+  renderLangFilters();
   renderLanguages();
-  renderRegions();
-  renderConvMeanings();
   renderFilters();
   renderHeatmap();
   drawMap();
   renderAbout();
   renderSources();
   document.getElementById("conceptSearch").oninput = e => renderMeanings(e.target.value);
+  document.getElementById("conceptSort").onchange = e => {
+    state.conceptSort = e.target.value; renderMeanings(document.getElementById("conceptSearch").value);
+  };
   document.getElementById("langSearch").oninput = e => renderLanguages(e.target.value);
-  document.getElementById("convSearch").oninput = e => renderConvMeanings(e.target.value);
   document.getElementById("sheetClose").onclick = () => document.getElementById("sheet").classList.remove("open");
   // keyboard: every clickable row/cell/chip is focusable (tabindex); Enter activates.
   // Activation re-renders the container and destroys the focused node, so focus is
@@ -110,7 +150,8 @@ async function boot() {
       twin?.focus();
     }, 0);
   });
-  // deep links (shareable): #c=<meaning> · #l=<language> · #r=<region> · #v=<look-alike meaning>
+  // deep links (shareable): #c=<meaning> · #l=<language> · #r=<region filter>
+  // (#v= was the retired Look-alikes view; it now opens the same meaning)
   // Selections write history entries (writeHash); Back/Forward re-apply any hash
   // we didn't just write ourselves.
   HASH_SELF = location.hash.slice(1);
@@ -122,10 +163,14 @@ async function boot() {
   if (!(await applyHash())) {
     // no deep link: open both hero views on the payoff, never an empty pane —
     // the pressed row/cell also teaches the selection grammar (ux-design.md §Landing)
-    if ((CORE.concepts || []).length) await selectConcept(CORE.concepts[0].ckey, true);
+    // Both branches below await a fetch (loadConcept / ensureShape), so a user can
+    // click a meaning or a heatmap cell while this default selection is still in
+    // flight. Re-check state right before committing so a real click always wins
+    // over this fallback, instead of the fallback silently clobbering it on resolve.
+    if ((CORE.concepts || []).length && !state.concept) await selectConcept(CORE.concepts[0].ckey, true);
     const top = CORE.shapes.slice().sort((a, b) =>
       (CORE.postings[b.shape] || []).length - (CORE.postings[a.shape] || []).length)[0];
-    if (top) {
+    if (top && !state.onset) {
       state.onset = top.onset_class; state.nuc = top.nucleus_bucket; state.shape = top.shape;
       renderHeatmap(); await ensureShape(top.shape); renderShapes(); drawMap(); renderLangs();
     }
@@ -136,10 +181,9 @@ let HASH_SELF = "";
 function writeHash(s) { HASH_SELF = s; location.hash = s; }
 async function applyHash() {
   const h = new URLSearchParams(location.hash.slice(1));
-  if (h.get("c")) { navigateTo("meanings"); await selectConcept(h.get("c"), true); }
+  if (h.get("c") || h.get("v")) { navigateTo("meanings"); await selectConcept(h.get("c") || h.get("v"), true); }
   else if (h.get("l")) { navigateTo("languages"); await selectLanguage(h.get("l"), true); }
-  else if (h.has("r")) { navigateTo("regions"); selectRegion(h.get("r"), true); } // has(): "" is the Unlisted region
-  else if (h.get("v")) { navigateTo("convergence"); await selectConvMeaning(h.get("v"), true); }
+  else if (h.has("r")) { navigateTo("languages"); setLangFilter("langRegion", h.get("r")); }
   else return false;
   return true;
 }
@@ -157,8 +201,8 @@ function renderFilters() {
     `<span class="chip ${cls} ${on ? "" : "off"}" tabindex="0" role="button" aria-pressed="${on}" ${extra}>${label}</span>`;
   const onsetChips = onsets.map(o =>
     chip(state.onsetOn.has(o), "onset", ONSET_LABEL[o], `data-onset="${o}"`)).join("");
-  const tierChips = TIER.map((t, i) =>
-    chip(state.tierOn.has(t), "tier-" + t, `${tierGlyphHTML(i)} ${t}`, `data-tier="${t}"`)).join("");
+  const tierChips = TIERS_PRESENT.map(i => TIER[i]).map((t, k) =>
+    chip(state.tierOn.has(t), "tier-" + t, `${tierGlyphHTML(TIERS_PRESENT[k])} ${t}`, `data-tier="${t}"`)).join("");
   document.getElementById("filters").innerHTML =
     `<div class="grp"><span class="lbl">onset</span>${onsetChips}</div>
      <div class="grp"><span class="lbl">tier</span>${tierChips}
@@ -184,37 +228,33 @@ function cellStats(o, n) {
   }
   const comp = [0, 0, 0];
   for (const t of best.values()) comp[t]++;
-  return { langCount: best.size, comp };
+  return { langCount: best.size, famCount: families(best.keys()).size, comp };
 }
 function renderHeatmap() {
   const onsets = ONSET_ORDER.filter(o => CORE.shapes.some(s => s.onset_class === o));
   const nucs = NUC_ORDER.filter(n => CORE.shapes.some(s => s.nucleus_bucket === n));
-  // Observed-vs-expected intensity (honesty: a raw count just rewards common cells /
-  // data-dense languages). expected = row×col marginal ÷ grand total (independence);
-  // ratio > 1 = this onset+vowel COMBINATION is commoner than chance. A PHOIBLE-
-  // inventory denominator would be stricter — this marginal proxy is fully client-side.
+  // Observed vs expected, counted by FAMILIES (19 of 65 verdicts flipped when
+  // counted by languages): expected = row × column marginal ÷ grand total.
   const grid = {}, rowT = {}, colT = {}; let grand = 0;
   for (const o of onsets) {
     grid[o] = {};
     for (const n of nucs) {
       const st = cellStats(o, n); grid[o][n] = st;
-      rowT[o] = (rowT[o] || 0) + st.langCount;
-      colT[n] = (colT[n] || 0) + st.langCount;
-      grand += st.langCount;
+      rowT[o] = (rowT[o] || 0) + st.famCount;
+      colT[n] = (colT[n] || 0) + st.famCount;
+      grand += st.famCount;
     }
   }
   const ratioOf = (o, n) => {
     const exp = grand ? rowT[o] * colT[n] / grand : 0;
-    return exp ? grid[o][n].langCount / exp : 0;
+    return exp ? grid[o][n].famCount / exp : 0;
   };
-  // The dial window (grafted from the panel's Typenschild proposal): a fixed
-  // readout above the grid carrying the hovered/focused cell's tier composition —
-  // cells keep only the count numeral, the dial keeps "never a bare count" whole.
+  // The dial window: a fixed readout above the grid for the hovered/focused
+  // cell — families, languages, tier composition, and the ratio when it is fair.
   const dialLine = (o, n) => {
-    const { langCount, comp } = grid[o][n];
-    const ratio = ratioOf(o, n);
-    const rtxt = ratio >= 1 ? `${ratio.toFixed(1)}× commoner than chance` : `${ratio.toFixed(2)}× — rarer than chance`;
-    return `${ONSET_LABEL[o]} × <span class="ipa">${NUC_LABEL[n]}</span> — ${langCount} language${langCount > 1 ? "s" : ""} · ${tierCompHTML(comp)} · ${rtxt}`;
+    const { langCount, famCount, comp } = grid[o][n];
+    const judged = famCount >= MIN_FAMILIES ? verdict(ratioOf(o, n)) : `too few families to compare with chance`;
+    return `${ONSET_LABEL[o]} × <span class="ipa">${NUC_LABEL[n]}</span> — <b>${famCount}</b> famil${famCount === 1 ? "y" : "ies"} · ${langCount} language${langCount > 1 ? "s" : ""} · ${tierCompHTML(comp)} · ${judged}`;
   };
   const dialDefault = state.onset && grid[state.onset]?.[state.nuc]?.langCount
     ? dialLine(state.onset, state.nuc)
@@ -227,16 +267,14 @@ function renderHeatmap() {
     const dim = state.onsetOn.has(o) ? "" : " dim";
     h += `<tr><th class='row${dim}'>${ONSET_LABEL[o]}</th>`;
     for (const n of nucs) {
-      const { langCount, comp } = grid[o][n];
+      const { langCount, famCount } = grid[o][n];
       if (!langCount) { h += "<td class='empty'></td>"; continue; }
-      const ratio = ratioOf(o, n);
-      const step = rampStep(ratio);
-      const dots = comp.map((c, i) => c ? `${c}${TIER_GLYPH[i]}` : "").filter(Boolean).join(" ");
+      const step = rampStep(famCount), thin = step < 0;
       const on = (state.onset === o && state.nuc === n) ? " on" : "";
-      const rtxt = ratio >= 1 ? `${ratio.toFixed(1)}× commoner than chance` : `${ratio.toFixed(2)}× — rarer than chance`;
-      h += `<td class="cell${on}${dim}${step === 4 ? " deep" : ""}"${dim ? ' aria-disabled="true"' : ' tabindex="0"'} style="background:${RAMP[step]}" data-o="${o}" data-n="${n}"
-              aria-label="${ONSET_LABEL[o]} plus ${NUC_LABEL[n]}: ${langCount} language(s), ${rtxt} — ${dots}"
-              title="${langCount} language(s), ${rtxt} — ${dots}"><div class="n">${langCount}</div></td>`;
+      const label = `${famCount} famil${famCount === 1 ? "y" : "ies"}, ${langCount} language${langCount > 1 ? "s" : ""}`;
+      h += `<td class="cell${on}${dim}${thin ? " thin" : ""}${step === 4 ? " deep" : ""}"${dim ? ' aria-disabled="true"' : ' tabindex="0"'}${thin ? "" : ` style="background:${RAMP[step]}"`} data-o="${o}" data-n="${n}"
+              aria-label="${ONSET_LABEL[o]} plus ${NUC_LABEL[n]}: ${label}"
+              title="${label}"><div class="n">${famCount}</div></td>`;
     }
     h += "</tr>";
   }
@@ -246,7 +284,7 @@ function renderHeatmap() {
   host.querySelectorAll("td.cell").forEach(td => {
     if (td.classList.contains("dim")) return; // excluded by the user's own filter: inert
     td.onclick = () => {
-      state.onset = td.dataset.o; state.nuc = td.dataset.n; state.shape = null;
+      state.onset = td.dataset.o; state.nuc = td.dataset.n; state.shape = null; state.showRare = false;
       renderHeatmap(); renderShapes(); drawMap(); renderLangs();
     };
     // hover/keyboard-focus reads the cell into the dial; leaving reverts to the selection
@@ -261,16 +299,28 @@ function renderHeatmap() {
   });
   renderShapes();
 }
+// Chips are ordered by how widely a shape is shared — families, then languages —
+// and carry that count (roadmap E4). One-language shapes fold behind "+N rare":
+// a cell listed 100+ chips alphabetically, and /ma/ (366) looked like /m:ɑ/ (1).
 function renderShapes() {
   const el = document.getElementById("shapes"); if (!el) return;
   const drill = document.getElementById("drill");
   if (!state.onset) { el.innerHTML = ""; drill.textContent = ""; return; }
   drill.innerHTML = `— ${ONSET_LABEL[state.onset]} × <span class="ipa">${NUC_LABEL[state.nuc]}</span>: pick a shape`;
-  el.innerHTML = cellShapes(state.onset, state.nuc).map(s =>
-    `<span class="shape ${state.shape === s.shape ? "sel" : ""}" tabindex="0" role="button" data-s="${s.shape}">/${s.shape}/</span>`).join("");
+  const ranked = cellShapes(state.onset, state.nuc).map(s => {
+    const lis = activePostings(s.shape).map(p => p[0]);
+    return { shape: s.shape, nl: new Set(lis).size, nf: families(lis).size };
+  }).filter(x => x.nl).sort((a, b) => b.nf - a.nf || b.nl - a.nl || a.shape.localeCompare(b.shape));
+  const rare = ranked.filter(x => x.nl === 1 && x.shape !== state.shape);
+  const shown = state.showRare ? ranked : ranked.filter(x => !rare.includes(x));
+  const chip = x => `<span class="shape ${state.shape === x.shape ? "sel" : ""}" tabindex="0" role="button" data-s="${x.shape}"
+      title="${x.nl} language${x.nl > 1 ? "s" : ""} in ${x.nf} famil${x.nf === 1 ? "y" : "ies"}">/${x.shape}/<span class="sc">${x.nl}</span></span>`;
+  el.innerHTML = shown.map(chip).join("") + (rare.length
+    ? `<button class="go rare" type="button">${state.showRare ? "hide" : `+${rare.length}`} rare (one language each)</button>` : "");
   el.querySelectorAll(".shape").forEach(sp => sp.onclick = async () => {
     state.shape = sp.dataset.s; await ensureShape(state.shape); renderShapes(); drawMap(); renderLangs();
   });
+  el.querySelector(".rare")?.addEventListener("click", () => { state.showRare = !state.showRare; renderShapes(); });
 }
 function renderLangs() {
   const el = document.getElementById("langs"), head = document.getElementById("selshape");
@@ -281,7 +331,7 @@ function renderLangs() {
   posts.forEach(p => { postComp[p[1]]++; });
   // each row leads with the word (attested tone form), then meaning, then language
   const rows = posts.map(p => {
-    const L = CORE.languages[p[0]], tier = TIER[p[1]];
+    const L = CORE.languages[p[0]];
     const d = FORMS[`${L.glottocode}|${state.shape}`] || {};
     const glosses = (d.words || []).flatMap(w => w.gloss_set.map(g => g.gloss));
     const words = glosses.slice(0, 3).join(", ") + (glosses.length > 3 ? ` +${glosses.length - 3}` : "");
@@ -291,11 +341,11 @@ function renderLangs() {
       <span class="ipa17">/${state.shape}${tone}/</span>
       <span class="gloss14">${words}</span>
       <span class="lname">${L.name}</span>
-      ${review}<span class="badge b-${tier}">${TIER_GLYPH[p[1]]} ${tier}</span></div>`;
+      ${review}${tierMark(p[1])}</div>`;
   }).join("");
   el.innerHTML = `<p class="conv">${playBtn(state.shape)} <span class="ipa22">/${state.shape}/</span> —
-      <b>${posts.length}</b> language${posts.length > 1 ? "s" : ""} · ${tierCompHTML(postComp)}
-      <span class="note">(guesses never hidden)</span></p>${rows}`;
+      ${spreadHTML(posts.map(p => p[0]))} · ${tierCompHTML(postComp)}
+      <span class="note">(unmarked rows are curated; guesses never hidden)</span></p>${rows}`;
   el.querySelectorAll(".langrow").forEach(r => r.onclick = () => openSheet(r.dataset.key));
 }
 
@@ -329,6 +379,7 @@ function openSheet(key) {
       ${state.pins.includes(key)
         ? `<button class="pin" onclick="unpin('${key}');openSheet('${key}')">in compare ×</button>`
         : `<button class="pin" onclick="pin('${key}');openSheet('${key}')">+ compare</button>`}</div>
+    <p class="note">${L.family || "family not given"} · ${yieldText(L)} examined are open monosyllables</p>
     <p class="note">source: ${f.preferred_source} (preferred of ${f.sources.join(", ")}) ·
        tones: ${f.tones.length ? `<span class="ipa">${f.tones.join(" ")}</span>` : "—"} · nucleus: ${f.nucleus_type}</p>
     <h2>Example words</h2>${words}`;
@@ -407,14 +458,18 @@ window.unpin = unpin;
 function renderMeanings(filter = "") {
   const el = document.getElementById("conceptList");
   const q = filter.trim().toLowerCase();
-  const list = (CORE.concepts || []).filter(c => !q || c.gloss.toLowerCase().includes(q));
+  // "beyond": only meanings with a shape more families share than any shuffle
+  // gave, largest excess first (roadmap B1); otherwise broadest reach first
+  const beyond = state.conceptSort === "beyond";
+  const list = (CORE.concepts || []).filter(c => (!q || c.gloss.toLowerCase().includes(q)) && (!beyond || c.beyond))
+    .sort(beyond ? (a, b) => b.gap - a.gap || b.lang_count - a.lang_count : () => 0);
   const max = Math.max(1, ...list.map(c => c.lang_count));
   el.innerHTML = list.slice(0, 300).map(c => {
     const conv = c.shape_count === 1 ? "1 shape" : `${c.shape_count} shapes`;
     return `<div class="crow ${state.concept === c.ckey ? "sel" : ""}" tabindex="0" role="button" data-c="${c.ckey}">
       <span class="gloss">${c.gloss}</span>
       <span class="bar"><i class="s-data" style="width:${Math.round(100 * c.lang_count / max)}%"></i></span>
-      <span class="cnt">${c.lang_count} langs · ${conv}</span></div>`;
+      <span class="cnt">${c.lang_count} langs · ${conv}${c.beyond ? ` · ${c.beyond} beyond chance` : ""}</span></div>`;
   }).join("") + (list.length > 300 ? `<p class="note">…${list.length - 300} more — search to narrow</p>` : "");
   el.querySelectorAll(".crow").forEach(r => r.onclick = () => selectConcept(r.dataset.c));
 }
@@ -425,6 +480,7 @@ async function selectConcept(ckey, skipHash) {
   renderMeanings(document.getElementById("conceptSearch").value);
   const box = document.getElementById("conceptDetail"), head = document.getElementById("conceptSel");
   const d = await loadConcept(ckey);
+  if (state.concept !== ckey) return; // a newer selection won the race while this one awaited
   if (!d) { box.innerHTML = `<p class="note">no data for this meaning</p>`; return; }
   head.textContent = `— ‘${d.gloss}’`;
   const byShape = new Map();
@@ -432,8 +488,13 @@ async function selectConcept(ckey, skipHash) {
     if (!byShape.has(shape)) byShape.set(shape, []);
     byShape.get(shape).push({ li, tone, tr, ur });
   }
-  const langs = new Set(d.entries.map(e => e[0]));
-  const shapes = [...byShape.entries()].sort((a, b) => b[1].length - a[1].length);
+  // Rank shapes by how many FAMILIES use them, then languages: a shape shared
+  // across families is the question worth asking; one shared inside a single
+  // family is most likely one inherited word, however many languages carry it.
+  const shapes = [...byShape.entries()]
+    .map(([shape, rows]) => ({ shape, rows, lis: rows.map(r => r.li) }))
+    .map(x => ({ ...x, nl: new Set(x.lis).size, nf: families(x.lis).size }))
+    .sort((a, b) => b.nf - a.nf || b.nl - a.nl);
   // lede composition: each language once, at its most-trustworthy tier
   const best = new Map();
   for (const [li, , , tr] of d.entries) {
@@ -442,21 +503,30 @@ async function selectConcept(ckey, skipHash) {
   }
   const ledeComp = [0, 0, 0];
   for (const t of best.values()) ledeComp[t]++;
-  const conv = `<p class="conv"><b>${langs.size}</b> language${langs.size > 1 ? "s" : ""} express
-    <b>‘${d.gloss}’</b> as an open monosyllable, using just <b>${byShape.size}</b> sound-shape${byShape.size > 1 ? "s" : ""}
-    <span class="note">(${tierCompHTML(ledeComp)})</span>.</p>`;
+  const B = CORE.meta.baseline, band = d.baseline || {};   // absent in builds before B1
+  const conv = `<p class="conv">${spreadHTML(best.keys())} express <b>‘${d.gloss}’</b> as an open
+    monosyllable, using <b>${byShape.size}</b> sound-shape${byShape.size > 1 ? "s" : ""}
+    <span class="note">(${tierCompHTML(ledeComp)})</span>.</p>
+    ${B ? `<p class="caveat">Beside each shape is what chance gives: how many families would share it if every
+    language’s words were shuffled among its own meanings (${B.runs} times). <b>Beyond chance</b> means more
+    families than any shuffle gave — which a loanword (<i>tea</i>), a nursery word (<i>mama</i>) or an
+    inherited word can all do; it is not a claim of relatedness. Of ${B.tested.toLocaleString()} shape–meaning pairs
+    tested, about ${Math.round(B.tested / (B.runs + 1))} would pass by chance alone; ${B.beyond} do.</p>` : ""}`;
   // card bodies lead with the word (attested tone form); the language name is
   // attribution — and a live link to the form sheet, not a dead end
-  const blocks = shapes.map(([shape, rows]) => {
+  const blocks = shapes.map(({ shape, rows, lis, nl, nf }) => {
+    // composition counts each language once, at its best tier, like the lede
+    const bestOf = new Map();
+    rows.forEach(r => bestOf.set(r.li, Math.min(r.tr, bestOf.get(r.li) ?? 9)));
     const comp = [0, 0, 0];
-    rows.forEach(r => { comp[r.tr]++; });
+    for (const t of bestOf.values()) comp[t]++;
     const names = rows.map(r => {
       const L = CORE.languages[r.li];
-      return `<span class="wlink" tabindex="0" role="button" title="${TIER[r.tr]} tier — open this form" data-key="${L.glottocode}|${shape}" data-shape="${shape}">${r.tone ? `<span class="ipa">${shape}${r.tone}</span> ` : ""}<span class="wname">${L.name}</span></span>${r.ur ? ` <span class="review">* review</span>` : ""}`;
+      return `<span class="wlink" tabindex="0" role="button" title="${L.family || "family not given"} · ${TIER[r.tr]} tier — open this form" data-key="${L.glottocode}|${shape}" data-shape="${shape}">${r.tr ? tierGlyphHTML(r.tr) + " " : ""}${r.tone ? `<span class="ipa">${shape}${r.tone}</span> ` : ""}<span class="wname">${L.name}</span></span>${r.ur ? ` <span class="review">* review</span>` : ""}`;
     }).join(" · ");
     return `<div class="cshape"><div class="hd">
         ${AUDIO[shape] ? `<button class="play inline" onclick="playShape('${shape}')" aria-label="hear">▶</button>` : ""}
-        <span class="ipa17">/${shape}/</span> <span class="note">${rows.length} language${rows.length > 1 ? "s" : ""} · ${tierCompHTML(comp)}</span>
+        <span class="ipa17">/${shape}/</span> <span class="note">${spreadHTML(lis)} · ${tierCompHTML(comp)}${bandHTML(band[shape])}</span>
         <button class="go" onclick="gotoShape('${shape}')">see in Sounds →</button></div>
       <div class="langs">${names}</div></div>`;
   }).join("");
@@ -464,6 +534,14 @@ async function selectConcept(ckey, skipHash) {
   box.querySelectorAll(".wlink").forEach(sp => sp.onclick = async () => {
     await ensureShape(sp.dataset.shape); openSheet(sp.dataset.key);
   });
+}
+
+// chance band for one shape card: "chance 0–2 families", and the verdict only
+// when the observed count beats every shuffle (see oms/baseline.py)
+function bandHTML(b) {
+  if (!b) return "";
+  const [obs, lo, hi, top] = b;
+  return ` · chance ${lo}–${hi} famil${hi === 1 ? "y" : "ies"}${obs > top ? ` · <b class="beyond">beyond chance</b>` : ""}`;
 }
 
 async function gotoShape(shape) {
@@ -488,23 +566,136 @@ function langIndex() {
   return (LANG_INDEX = idx);
 }
 
+// A yield is read against its sample (CONTEXT.md "Examined"), with its 95%
+// Wilson interval (roadmap B3). Languages rank by the interval's LOWER bound, so
+// 1 of 1 words (20–100%) never outranks 180 of 185 (94–99%). This replaced a
+// fixed 30-word cutoff: the interval says how sure, instead of a line saying who.
+const rateOf = L => L.examined ? L.form_count / L.examined : 0;
+const SAMPLE_ORDER = ["word list", "mixed", "dictionary", ""];
+function wilson(k, n) {
+  if (!n) return [0, 1];
+  const z = 1.96, p = k / n, d = 1 + z * z / n, c = p + z * z / (2 * n);
+  const h = z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n));
+  return [Math.max(0, (c - h) / d), Math.min(1, (c + h) / d)];
+}
+// one decimal under 10%, or Hindi's 0.4–0.6% reads "1% (0%–1%)"
+const pct = x => `${x < 0.1 ? (100 * x).toFixed(1) : Math.round(100 * x)}%`;
+function yieldText(L) {
+  return `${L.form_count} of ${L.examined} word${L.examined === 1 ? "" : "s"}`;
+}
+function rangeText(L) {
+  const [lo, hi] = wilson(L.form_count, L.examined);
+  return `${pct(rateOf(L))} (${pct(lo)}–${pct(hi)})`;
+}
+// the interval drawn over the rate bar: a bracket from lower to upper bound
+function ciHTML(L) {
+  const [lo, hi] = wilson(L.form_count, L.examined);
+  return `<b class="ci" style="left:${(100 * lo).toFixed(1)}%;width:${(100 * (hi - lo)).toFixed(1)}%"></b>`;
+}
+// Funnel plot (roadmap B3): each language's rate against the words examined,
+// with 95% limits around the rate of every plotted language. Inside the funnel
+// a language is within chance of that common rate; outside it stands out. One
+// kind of sample at a time (B2): word lists unless the filter picks another.
+function drawFunnel(langs) {
+  const host = document.getElementById("langFunnel"); if (!host) return;
+  const kind = state.langSample ?? "word list";
+  const pts = langs.filter(L => L.examined > 0 && L.sample === kind);
+  if (pts.length < 10) { host.innerHTML = ""; return; }
+  const k = pts.reduce((a, L) => a + L.form_count, 0), n = pts.reduce((a, L) => a + L.examined, 0), p0 = k / n;
+  const W = 520, H = 210, m = { l: 34, r: 8, t: 8, b: 30 };
+  const lx = Math.log10, nMin = Math.min(...pts.map(L => L.examined)), nMax = Math.max(...pts.map(L => L.examined));
+  const X = v => m.l + (lx(v) - lx(nMin)) / Math.max(1e-9, lx(nMax) - lx(nMin)) * (W - m.l - m.r);
+  const Y = v => H - m.b - v * (H - m.t - m.b);
+  const lim = (s, v) => Math.min(1, Math.max(0, p0 + s * 1.96 * Math.sqrt(p0 * (1 - p0) / v)));
+  const steps = Array.from({ length: 60 }, (_, i) => nMin * (nMax / nMin) ** (i / 59));
+  const line = s => "M" + steps.map(v => `${X(v).toFixed(1)},${Y(lim(s, v)).toFixed(1)}`).join(" L");
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="funnel plot: share of open monosyllables against words examined, ${kind} samples">`;
+  for (const t of [0, 0.25, 0.5, 0.75, 1]) svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(t)}" y2="${Y(t)}" stroke="#C9C6BF" stroke-width=".5"/><text x="${m.l - 4}" y="${Y(t) + 3}" font-size="8" text-anchor="end" fill="#64615A">${t * 100}%</text>`;
+  for (const t of [10, 30, 100, 300, 1000, 3000, 10000, 30000].filter(t => t >= nMin && t <= nMax))
+    svg += `<text x="${X(t)}" y="${H - m.b + 12}" font-size="8" text-anchor="middle" fill="#64615A">${t.toLocaleString()}</text>`;
+  svg += `<text x="${(m.l + W - m.r) / 2}" y="${H - 4}" font-size="8" text-anchor="middle" fill="#64615A">words examined (log scale)</text>`;
+  svg += `<path d="${line(1)}" fill="none" stroke="#A39F96" stroke-dasharray="3 2"/><path d="${line(-1)}" fill="none" stroke="#A39F96" stroke-dasharray="3 2"/>`;
+  svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(p0)}" y2="${Y(p0)}" stroke="#4A4841" stroke-width=".8"/>`;
+  let out = 0, selDot = "";
+  const dots = pts.map(L => {
+    const r = rateOf(L), above = r > lim(1, L.examined), below = r < lim(-1, L.examined);
+    if (above || below) out++;
+    const sel = state.language === L.glottocode;
+    const fill = above ? "#2F5E6C" : below ? "#F2F1ED" : "#8B877E";
+    const stroke = above || below ? "#2F5E6C" : "none";
+    const dot = `<circle class="fdot" data-l="${L.glottocode}" cx="${X(L.examined).toFixed(1)}" cy="${Y(r).toFixed(1)}" r="${sel ? 4 : 2.2}" fill="${fill}" stroke="${sel ? "#21201C" : stroke}" stroke-width="${sel ? 1.5 : .8}"><title>${L.name} · ${yieldText(L)} · ${rangeText(L)}${above ? " · above the funnel" : below ? " · below the funnel" : ""}</title></circle>`;
+    if (sel) { selDot = dot; return ""; }   // drawn last, so it is never covered
+    return dot;
+  });
+  // If all languages shared one rate, about 5% would fall outside by chance.
+  // Far more means they genuinely differ: the rate describes the language.
+  const share = out / pts.length;
+  const reading = share > 0.1
+    ? `languages differ far more than sample size explains, so a rate mostly reflects the language, not the list`
+    : `about what chance alone gives`;
+  host.innerHTML = svg + dots.join("") + selDot + `</svg><p class="note">${pts.length} ${kind} samples · solid line = their common rate, ${pct(p0)} ·
+    dashed = where 95% would fall if all shared that rate · <b>${out}</b> (${pct(share)}) fall outside
+    (<span style="color:#2F5E6C">●</span> above, <span style="color:#2F5E6C">○</span> below): ${reading}.</p>`;
+  host.querySelectorAll(".fdot").forEach(c => c.onclick = () => selectLanguage(c.dataset.l));
+}
+
+function renderLangFilters() {
+  const count = key => {
+    const m = new Map();
+    for (const L of CORE.languages) m.set(L[key] || "", (m.get(L[key] || "") || 0) + 1);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  };
+  const opts = (all, rows, none) => `<option value="*">${all}</option>` + rows.map(([k, n]) =>
+    `<option value="${k}">${k || none} (${n})</option>`).join("");
+  const reg = document.getElementById("langRegion"), fam = document.getElementById("langFamily");
+  reg.innerHTML = opts("all regions", count("macroarea"), "Unlisted");
+  fam.innerHTML = opts("all families", count("family"), "family not given");
+  const smp = document.getElementById("langSample");
+  smp.innerHTML = opts("all samples", count("sample").filter(([k]) => k), "");
+  reg.onchange = () => setLangFilter("langRegion", reg.value);
+  fam.onchange = () => setLangFilter("langFamily", fam.value);
+  smp.onchange = () => setLangFilter("langSample", smp.value);
+}
+function setLangFilter(id, value) {
+  const all = value == null || value === "*";
+  state[id] = all ? null : value;
+  document.getElementById(id).value = all ? "*" : value;
+  if (id === "langRegion") writeHash(all ? "" : "r=" + encodeURIComponent(value));
+  renderLanguages(document.getElementById("langSearch").value);
+}
 function renderLanguages(filter = "") {
   const el = document.getElementById("langList");
   const q = filter.trim().toLowerCase();
+  const reg = state.langRegion, fam = state.langFamily, smp = state.langSample;
   const idx = langIndex()
     .map((e, li) => ({ e, li }))
-    .filter(({ e }) => e.shapes.length &&
-      (!q || e.L.name.toLowerCase().includes(q) || (e.L.macroarea || "").toLowerCase().includes(q)))
-    .sort((a, b) => b.e.shapes.length - a.e.shapes.length);
-  const max = Math.max(1, ...idx.map(({ e }) => e.shapes.length));
-  el.innerHTML = idx.slice(0, 300).map(({ e }) => {
-    const sc = e.shapes.length;
-    return `<div class="crow ${state.language === e.L.glottocode ? "sel" : ""}" tabindex="0" role="button" data-l="${e.L.glottocode}">
-      <span class="gloss">${e.L.name}</span>
-      <span class="bar">${stripSegs(e.comp, 100 * sc / max)}</span>
-      <span class="cnt">${sc} shape${sc > 1 ? "s" : ""} (${tierCompHTML(e.comp)})${e.L.macroarea ? " · " + e.L.macroarea : ""}</span></div>`;
-  }).join("") + (idx.length > 300 ? `<p class="note">…${idx.length - 300} more — search to narrow</p>` : "");
+    .filter(({ e }) => (!q || e.L.name.toLowerCase().includes(q) || (e.L.alias || "").toLowerCase().includes(q))
+      && (reg == null || (e.L.macroarea || "") === reg)
+      && (fam == null || (e.L.family || "") === fam)
+      && (smp == null || e.L.sample === smp))
+    .map(x => ({ ...x, lo: wilson(x.e.L.form_count, x.e.L.examined)[0] }))
+    // a rate from a word list and one from a dictionary are not ranked together
+    // (roadmap B2): group by kind of sample, then rank within it
+    .sort((a, b) => SAMPLE_ORDER.indexOf(a.e.L.sample) - SAMPLE_ORDER.indexOf(b.e.L.sample)
+      || b.lo - a.lo || b.e.L.examined - a.e.L.examined);
+  const lis = idx.map(x => x.li);
+  drawFunnel(idx.map(x => x.e.L));
+  const head = `<p class="note">${spreadHTML(lis)} · ${idx.filter(x => x.e.shapes.length).length} with open monosyllables</p>`;
+  el.innerHTML = head + idx.slice(0, 300).map(({ e }) => {
+    const L = e.L;
+    return `<div class="crow ${state.language === L.glottocode ? "sel" : ""}" tabindex="0" role="button" data-l="${L.glottocode}">
+      <span class="gloss">${L.name}</span>
+      <span class="bar">${stripSegs(e.comp, 100 * rateOf(L))}${ciHTML(L)}</span>
+      <span class="cnt">${yieldText(L)} · ${rangeText(L)}${L.sample && L.sample !== "word list" ? ` · ${L.sample}` : ""} · ${L.family || "family not given"}</span></div>`;
+  }).join("") + (idx.length > 300 ? `<p class="note">…${idx.length - 300} more — search or filter to narrow</p>` : "");
   el.querySelectorAll(".crow").forEach(r => r.onclick = () => selectLanguage(r.dataset.l));
+}
+const LANG_GLOSS = {};
+async function langGlosses(gc) {
+  if (!(gc in LANG_GLOSS)) {
+    try { LANG_GLOSS[gc] = CHUNKED ? await getJSON(`${BASE}/lang/${gc}.json`) : null; } catch { LANG_GLOSS[gc] = null; }
+  }
+  return LANG_GLOSS[gc];
 }
 async function selectLanguage(gc, skipHash) {
   state.language = gc;
@@ -515,6 +706,8 @@ async function selectLanguage(gc, skipHash) {
   const li = CORE.languages.findIndex(l => l.glottocode === gc);
   if (li < 0) { box.innerHTML = `<p class="note">unknown language</p>`; return; }
   const L = CORE.languages[li], e = langIndex()[li], meta = shapeMeta();
+  const glosses = await langGlosses(gc);
+  if (state.language !== gc) return;   // a newer selection won while this one loaded
   head.textContent = `— ${L.name}`;
   const shapes = e.shapes.slice().sort((a, b) =>
     (ONSET_ORDER.indexOf(meta[a.shape]?.onset_class) - ONSET_ORDER.indexOf(meta[b.shape]?.onset_class))
@@ -522,28 +715,30 @@ async function selectLanguage(gc, skipHash) {
   const loc = (L.longitude == null || L.latitude == null)
     ? `<span class="review">no coordinates — listed but unmapped</span>`
     : `${L.latitude.toFixed(1)}, ${L.longitude.toFixed(1)}`;
-  const conv = `<p class="conv"><b>${L.name}</b> has <b>${e.shapes.length}</b> open-monosyllable
-      shape${e.shapes.length > 1 ? "s" : ""} <span class="note">(${tierCompHTML(e.comp)})</span>.</p>
-    <p class="note">region: ${L.macroarea || "unlisted"} · location: ${loc} ·
-      documentation: ${L.doc_status || "—"} · prosody: ${L.prosodic_type || "—"} ·
-      ${L.form_count} example word${L.form_count === 1 ? "" : "s"} in the catalog</p>`;
+  const share = L.examined ? ` — ${rangeText(L)}` : "";
+  const conv = e.shapes.length
+    ? `<p class="conv"><b>${L.name}</b> has <b>${e.shapes.length}</b> open monosyllable${e.shapes.length > 1 ? "s" : ""}
+      among the <b>${L.examined}</b> words examined${share} <span class="note">(${tierCompHTML(e.comp)})</span>.</p>`
+    : `<p class="conv">No open monosyllables among the <b>${L.examined}</b> words examined for <b>${L.name}</b>.</p>
+      <p class="note">That describes the sample, not the language: a longer word list may hold some.</p>`;
+  const facts = `<p class="note">${L.alias ? `source name: ${L.alias} · ` : ""}family: ${L.family || "not given"} · region: ${L.macroarea || "unlisted"} ·
+      location: ${loc} · sample: ${L.sample || "none"} · the range is a 95% interval: with ${L.examined} words, the true share could lie anywhere in it</p>`;
   const blocks = shapes.slice(0, 400).map(s => {
-    // meanings belong beside the word (blob build has them all; the chunked
-    // build only for already-fetched shapes — top-glosses-in-postings is a
-    // recorded bake debt in .interface-design/system.md)
-    const w = (FORMS[`${gc}|${s.shape}`]?.words || []).flatMap(x => x.gloss_set.map(g => g.gloss));
+    // meanings belong beside the word: the build's per-language gloss file
+    // (lang/<glottocode>.json) has them all, one request per language
+    const w = glosses?.[s.shape] || (FORMS[`${gc}|${s.shape}`]?.words || []).flatMap(x => x.gloss_set.map(g => g.gloss));
     const gl = w.slice(0, 3).join(", ") + (w.length > 3 ? ` +${w.length - 3}` : "");
     // portal card: names ONE form, so its whole surface opens the sheet
     return `<div class="cshape portal" data-key="${gc}|${s.shape}" data-shape="${s.shape}"><div class="hd">
       ${AUDIO[s.shape] ? `<button class="play inline" onclick="playShape('${s.shape}')" aria-label="hear">▶</button>` : ""}
       <span class="lshape" tabindex="0" role="button" data-key="${gc}|${s.shape}" data-shape="${s.shape}"><span class="ipa17">/${s.shape}/</span></span>
       ${gl ? `<span class="gloss14">${gl}</span>` : ""}
-      <span class="badge b-${TIER[s.tier]}">${TIER_GLYPH[s.tier]} ${TIER[s.tier]}</span>
+      ${tierMark(s.tier)}
       ${s.review ? `<span class="review">* review</span>` : ""}
       <button class="go" onclick="gotoShape('${s.shape}')">see in Sounds →</button></div></div>`;
   }).join("")
     + (shapes.length > 400 ? `<p class="note">…${shapes.length - 400} more shapes</p>` : "");
-  box.innerHTML = conv + blocks;
+  box.innerHTML = conv + facts + blocks;
   // the whole portal card opens the form sheet; inner keys win over the container
   box.querySelectorAll(".cshape.portal").forEach(c => c.onclick = async e => {
     if (e.target.closest("button,a,.lshape")) return;
@@ -554,137 +749,7 @@ async function selectLanguage(gc, skipHash) {
   });
 }
 
-let REGION_INDEX = null;
-function regionIndex() {
-  if (REGION_INDEX) return REGION_INDEX;
-  const byRegion = new Map();
-  langIndex().forEach((e, li) => {
-    if (!e.shapes.length) return;
-    const key = e.L.macroarea || "";
-    if (!byRegion.has(key)) byRegion.set(key, { region: key, langs: [], shapeSet: new Set(), comp: [0, 0, 0] });
-    const r = byRegion.get(key);
-    r.langs.push({ li, name: e.L.name, sc: e.shapes.length });
-    for (const s of e.shapes) r.shapeSet.add(s.shape);
-    r.comp[Math.min(...e.shapes.map(s => s.tier))]++; // each language once, at its best tier
-  });
-  return (REGION_INDEX = [...byRegion.values()].sort((a, b) => b.langs.length - a.langs.length));
-}
-function renderRegions() {
-  const el = document.getElementById("regionList");
-  const regs = regionIndex();
-  const max = Math.max(1, ...regs.map(r => r.langs.length));
-  el.innerHTML = regs.map(r => `<div class="crow ${state.region === r.region ? "sel" : ""}" tabindex="0" role="button" data-r="${encodeURIComponent(r.region)}">
-      <span class="gloss">${r.region || "Unlisted"}</span>
-      <span class="bar">${stripSegs(r.comp, 100 * r.langs.length / max)}</span>
-      <span class="cnt">${r.langs.length} langs (${tierCompHTML(r.comp)}) · ${r.shapeSet.size} shapes</span></div>`).join("");
-  el.querySelectorAll(".crow").forEach(row => row.onclick = () => selectRegion(decodeURIComponent(row.dataset.r)));
-}
-function selectRegion(region, skipHash) {
-  state.region = region;
-  if (!skipHash) writeHash("r=" + encodeURIComponent(region));
-  renderRegions();
-  const box = document.getElementById("regionDetail"), head = document.getElementById("regionSel");
-  const r = regionIndex().find(x => x.region === region);
-  if (!r) { box.innerHTML = `<p class="note">no data</p>`; return; }
-  const lbl = r.region || "Unlisted";
-  head.textContent = `— ${lbl}`;
-  const conv = `<p class="conv"><b>${r.langs.length}</b> language${r.langs.length > 1 ? "s" : ""} in
-      <b>${lbl}</b> use <b>${r.shapeSet.size}</b> distinct open-monosyllable shape${r.shapeSet.size > 1 ? "s" : ""}
-      <span class="note">(${tierCompHTML(r.comp)})</span>.</p>`;
-  const langs = r.langs.slice().sort((a, b) => b.sc - a.sc);
-  // the specimen is present even here: a serif preview of each language's shapes
-  const rows = langs.slice(0, 400).map(l => {
-    const shp = langIndex()[l.li].shapes;
-    const prev = shp.slice(0, 3).map(s => `/${s.shape}/`).join(" ") + (shp.length > 3 ? ` +${shp.length - 3}` : "");
-    return `<div class="langrow" tabindex="0" role="button" data-l="${CORE.languages[l.li].glottocode}">
-      <span class="name">${l.name} <span class="note ipa">${prev}</span></span>
-      <span class="badge">${l.sc} shape${l.sc > 1 ? "s" : ""}</span></div>`;
-  }).join("")
-    + (langs.length > 400 ? `<p class="note">…${langs.length - 400} more</p>` : "");
-  box.innerHTML = conv + rows;
-  box.querySelectorAll(".langrow").forEach(row => row.onclick = () => pickLang(row.dataset.l));
-}
-function pickLang(gc) {
-  // arrive with the Languages list pre-filtered to the region we came from —
-  // visible, reversible context instead of an unmarked teleport
-  navigateTo("languages");
-  document.getElementById("langSearch").value = state.region || "";
-  selectLanguage(gc);
-}
-window.selectLanguage = selectLanguage; window.selectRegion = selectRegion; window.pickLang = pickLang;
-
-/* ---------- look-alikes: same sound + same meaning across languages ----------
-   HONESTY BOUNDARY (ux-design.md "Why no similarity score", load-bearing): this
-   surfaces raw co-occurrences only — a count of how many languages share a shape
-   for a meaning, the same class of fact as a heatmap cell. It computes NO
-   similarity / relatedness score, and every view leads with the chance caveat. */
-const CONV_BANNER = `<p class="convbanner"><span class="lbl">chance vs. cognate — read first</span><br>These are <b>raw co-occurrences, not a relatedness claim.</b> Two
-  languages sharing a shape for a meaning may be coincidence <i>or</i> shared history — and for short open
-  monosyllables the two are notoriously hard to tell apart without an explicit chance baseline (Ringe 1992).
-  This view computes <b>no similarity or relatedness score</b> and takes no side; your eye does the judging.</p>`;
-function renderConvMeanings(filter = "") {
-  const el = document.getElementById("convList");
-  const q = filter.trim().toLowerCase();
-  const list = (CORE.concepts || []).filter(c => c.lang_count >= 2 && (!q || c.gloss.toLowerCase().includes(q)))
-    .sort((a, b) => b.lang_count - a.lang_count);
-  const max = Math.max(1, ...list.map(c => c.lang_count));
-  el.innerHTML = list.slice(0, 300).map(c =>
-    `<div class="crow ${state.convMeaning === c.ckey ? "sel" : ""}" tabindex="0" role="button" data-c="${c.ckey}">
-      <span class="gloss">${c.gloss}</span>
-      <span class="bar"><i class="s-data" style="width:${Math.round(100 * c.lang_count / max)}%"></i></span>
-      <span class="cnt">${c.lang_count} langs · ${c.shape_count} shapes</span></div>`).join("")
-    + (list.length > 300 ? `<p class="note">…${list.length - 300} more — search to narrow</p>` : "");
-  el.querySelectorAll(".crow").forEach(r => r.onclick = () => selectConvMeaning(r.dataset.c));
-}
-async function selectConvMeaning(ckey, skipHash) {
-  state.convMeaning = ckey;
-  if (!skipHash) writeHash("v=" + ckey);
-  renderConvMeanings(document.getElementById("convSearch").value);
-  const box = document.getElementById("convDetail"), head = document.getElementById("convSel");
-  const d = await loadConcept(ckey);
-  if (!d) { box.innerHTML = CONV_BANNER + `<p class="note">no data for this meaning</p>`; return; }
-  head.textContent = `— ‘${d.gloss}’`;
-  const byShape = new Map();
-  for (const [li, shape, tone, tr, cr, ur] of d.entries) {
-    if (!byShape.has(shape)) byShape.set(shape, []);
-    byShape.get(shape).push({ li, tone, tr, ur });
-  }
-  // A "look-alike" = a single shape that ≥2 distinct languages use for this meaning.
-  const shared = [...byShape.entries()]
-    .map(([shape, rows]) => [shape, rows, new Set(rows.map(r => r.li)).size])
-    .filter(([, , nl]) => nl >= 2)
-    .sort((a, b) => b[2] - a[2]);
-  if (!shared.length) {
-    box.innerHTML = `<p class="convhd">‘${d.gloss}’</p>` + CONV_BANNER + `<p class="note">No single shape is shared by two or more languages for
-      ‘${d.gloss}’ — here every language reaches for a different sound. (That is the common case; convergence
-      is rarer than intuition suggests.)</p>`;
-    return;
-  }
-  const [topShape, , topN] = shared[0];
-  const lede = `<p class="conv">For <b>‘${d.gloss}’</b>, <b>${shared.length}</b>
-    sound-shape${shared.length > 1 ? "s are" : " is"} independently used by two or more languages;
-    the widest is <span class="ipa17">/${topShape}/</span> (<b>${topN}</b> languages).</p>`;
-  // Evidence quality legible at rest in the judgment view: per-shape tier
-  // composition in the head, per-language tier glyph and review flag inline.
-  const blocks = shared.map(([shape, rows, nl]) => {
-    const comp = [0, 0, 0];
-    rows.forEach(r => { comp[r.tr]++; });
-    const names = rows.map(r => {
-      const L = CORE.languages[r.li];
-      return `<span class="wlink" tabindex="0" role="button" title="${TIER[r.tr]} tier — open this form" data-key="${L.glottocode}|${shape}" data-shape="${shape}">${tierGlyphHTML(r.tr)} ${r.tone ? `<span class="ipa">${shape}${r.tone}</span> ` : ""}<span class="wname">${L.name}</span></span>${r.ur ? ` <span class="review">* review</span>` : ""}`;
-    }).join(" · ");
-    return `<div class="cshape"><div class="hd">
-        ${AUDIO[shape] ? `<button class="play inline" onclick="playShape('${shape}')" aria-label="hear">▶</button>` : ""}
-        <span class="ipa17">/${shape}/</span> <span class="note">${nl} languages · ${tierCompHTML(comp)}</span>
-        <button class="go" onclick="gotoShape('${shape}')">see in Sounds →</button></div>
-      <div class="langs">${names}</div></div>`;
-  }).join("");
-  box.innerHTML = `<p class="convhd">‘${d.gloss}’</p>` + CONV_BANNER + lede + blocks;
-  box.querySelectorAll(".wlink").forEach(sp => sp.onclick = async () => {
-    await ensureShape(sp.dataset.shape); openSheet(sp.dataset.key);
-  });
-}
-window.selectConvMeaning = selectConvMeaning;
+window.selectLanguage = selectLanguage;
 
 /* ---------- about + sources (honesty destinations) ---------- */
 function renderAbout() {
@@ -699,13 +764,18 @@ function renderAbout() {
     <p>One syllable, ending on a vowel — including the gliding vowels in “bye” and “now”. Words that end
     in a consonant (“cat”) or have no vowel at all (“mm”) are left out. It’s a deliberately narrow rule, so
     that every language is measured the same way.</p>
+    <p>Syllables are counted the way each source wrote the word. Two vowels written as separate sounds are
+    two syllables — Māori <span class="ipa">/ru.a/</span> ‘two’ is not included. Two vowels count as one gliding
+    vowel only when the source says so. Sources that give spellings instead of sounds are converted first, and
+    their vowel pairs are left out, because a spelling cannot tell the two cases apart.</p>
 
     <h3>How much to trust each sound</h3>
     <p>Every pronunciation carries a small mark for how it was sourced: ${g(0)} <b>curated</b> comes from a
     <a onclick="navigateTo('sources')">checked linguistic database</a>, ${g(1)} <b>mined</b> is drawn from dictionaries, and ${g(2)} <b>generated</b>
     is a careful guess from spelling. We never hide the guesses — for many under-documented languages they are
     all that exists — and every count of languages is broken down by these marks, so you can
-    see at a glance whether you’re standing on solid ground or thin ice.</p>
+    see at a glance whether you’re standing on solid ground or thin ice.${TIERS_PRESENT.includes(2) ? "" : `
+    This build has no generated forms: every sound comes from a curated database or a dictionary.`}</p>
     <p><span class="bar mini" style="max-width:14rem">${stripSegs([28, 11, 8], 100)}</span>
     <span class="note">28${g(0)} 11${g(1)} 8${g(2)} — the same gauge everywhere: solid segments are sourced;
     the guessed share is left hollow, literally not inked in.</span></p>
@@ -719,14 +789,20 @@ function renderAbout() {
     <h3>Why we never score similarity</h3>
     <p>You won’t find a number here claiming two languages are related because their words sound alike. For
     words this short, matching sounds are almost always coincidence — <span class="ipa">/ma/</span> means “mother” in wildly
-    unrelated languages largely because it’s among the first sounds a baby makes. We lay the look-alikes side
-    by side and let your eye judge; a genuine claim of kinship takes far more than a rhyme.</p>
+    unrelated languages largely because it’s among the first sounds a baby makes. What we do show is how many
+    language <i>families</i> share a sound: a hundred related languages agreeing is one inherited word, while
+    a handful of unrelated families agreeing is the more curious fact. To tell that from coincidence, each shape
+    is set against chance: its words shuffled among each language’s own meanings, two hundred times. A shape more
+    families share than any shuffle gave is marked <i>beyond chance</i> — often a loanword or a nursery word.</p>
 
     <h3>Why coverage is uneven</h3>
-    <p>The gaps are honest. Some languages simply have few open syllables; others are just thinly documented.
-    <a onclick="navigateTo('explore')">On the map</a>, an empty spot tells you which — a hollow ring means a
-    language has no open monosyllables at all, not that we haven’t looked yet. (Unlike the hollow guess-mark
-    ○, the ring is a confident claim.)</p>`;
+    <p>Some languages simply have few open syllables; most are just thinly sampled. Every language is shown
+    against the words its sources give — <b>12 of 187</b> means 12 open monosyllables among 187 words examined —
+    because a 200-word list and a whole dictionary are not the same evidence.
+    <a onclick="navigateTo('explore')">On the map</a>, a hollow ring means none turned up among the words
+    examined. That is a fact about the sample, not a claim about the language.</p>
+    <p>Many languages in the catalog belong to a few large families — Austronesian alone is nearly half.
+    So a count of languages always travels with its count of families.</p>`;
 }
 function renderSources() {
   // grouped by license family so the NC block reads as one cluster
@@ -739,7 +815,10 @@ function renderSources() {
     catalog is released under <b>CC-BY-NC-SA 4.0</b> — free to use, share, and adapt for
     <b>non-commercial</b> purposes. The per-Form <code>source_license</code> lets reusers extract a
     commercial-safe subset (only CC0 / CC-BY / CC-BY-SA sources). No-derivatives (ND) sources are excluded.</p>
-    <table class="src"><thead><tr><th>source</th><th>tier</th><th>license</th></tr></thead><tbody>${rows}</tbody></table>`;
+    <table class="src"><thead><tr><th>source</th><th>tier</th><th>license</th></tr></thead><tbody>${rows}</tbody></table>
+    <p>Language names are Glottolog’s (<a href="https://glottolog.org" target="_blank" rel="noopener">Glottolog 5.3</a>,
+    Hammarström, Forkel, Haspelmath &amp; Bank, CC-BY 4.0); each source’s own name for a language is kept as its alias.
+    Coastlines: Natural Earth, via world-atlas (public domain).</p>`;
 }
 
 /* ---------- map (Equal Earth) ---------- */
@@ -833,43 +912,80 @@ function buildBasemap() {
     `<g fill="none" stroke="#C9C6BF" stroke-width=".4">${grat.map(d => `<path d="${d}"/>`).join("")}</g>` + land;
   return MAP_BASE;
 }
+// The map answers one question: where is the selected shape, against where we
+// looked? So it has two layers, drawn in that order. Context: every examined
+// language, small and quiet — "none found in the sample" is context too, not a
+// louder ring. Answer: the languages with the shape, drawn LAST in the data hue
+// with a page-coloured ring, so a dense cluster stays countable and nothing hides
+// a hit (before 2026-09-29, 216 of 369 /ma/ dots sat under an unselected dot).
+// Proportion, which dots cannot show, is the regional strip under the map.
+const INK_2 = "#4A4841", INK_3 = "#64615A", DATA = "#2F5E6C", RING = "#F2F1ED", ALARM = "#A63A22";
 function drawMap() {
-  const withShape = new Set(state.shape ? activePostings(state.shape).map(p => p[0]) : []);
-  const review = new Set(state.shape ? activePostings(state.shape).filter(p => p[3]).map(p => p[0]) : []);
-  let svg = `<svg viewBox="0 0 ${MAP_W} ${MAP_H}" role="img" aria-label="world map of languages">` + buildBasemap();
-  let unmapped = 0;
+  const posts = state.shape ? activePostings(state.shape) : [];
+  const withShape = new Set(posts.map(p => p[0]));
+  const review = new Set(posts.filter(p => p[3]).map(p => p[0]));
+  let ctx = "", hits = "", unmapped = 0;
   CORE.languages.forEach((L, i) => {
     if (L.longitude == null || L.latitude == null) { unmapped++; return; } // listed but unmapped — never plotted at (0,0)
     const [ex, ey] = equalEarth(L.longitude, L.latitude);
-    const x = mapX(ex), y = mapY(ey);
-    const noData = L.form_count === 0;
-    let fill = "#4A4841", r = 3, stroke = "", flag = "";
-    // hollow ring = a positive structural claim, so it is inked firmly — unlike
-    // unsourced languages, which are simply not in the catalog and get no mark
-    if (noData) { fill = "none"; stroke = `stroke="#4A4841" stroke-width="1.3"`; r = 4; }
-    if (state.shape) {
-      if (withShape.has(i)) {
-        fill = "#2F5E6C"; r = 4.5;
-        // review is an annotation flag beside the dot, never a recolor of it —
-        // the data hue keeps meaning "has this shape" even under review
-        if (review.has(i)) flag = `<rect x="${(x + 2.6).toFixed(1)}" y="${(y - 6.6).toFixed(1)}" width="4" height="4" fill="#A63A22"/>`;
-      } else if (!noData) { fill = "#64615A"; r = 2.5; } // recede by size, not below the 3:1 ink floor
+    const x = mapX(ex).toFixed(1), y = mapY(ey).toFixed(1);
+    const none = L.form_count === 0;
+    const title = `<title>${L.name} · ${L.family || "family not given"} · ${yieldText(L)}${none ? " — none found in this sample" : ""}</title>`;
+    if (state.shape && withShape.has(i)) {
+      // review is an annotation beside the dot, never a recolor of it
+      const flag = review.has(i) ? `<rect x="${(+x + 2.4).toFixed(1)}" y="${(+y - 5.6).toFixed(1)}" width="3" height="3" fill="${ALARM}"/>` : "";
+      hits += `<circle class="dothit" tabindex="0" role="button" data-li="${i}" cx="${x}" cy="${y}" r="3.2" fill="${DATA}" stroke="${RING}" stroke-width=".9">${title}</circle>${flag}`;
+    } else if (state.shape) {
+      ctx += `<circle cx="${x}" cy="${y}" r="1.4" fill="${INK_3}">${title}</circle>`;   // recede by size, not below the 3:1 ink floor
+    } else {
+      ctx += none
+        ? `<circle cx="${x}" cy="${y}" r="1.8" fill="none" stroke="${INK_3}" stroke-width=".7">${title}</circle>`
+        : `<circle cx="${x}" cy="${y}" r="1.9" fill="${INK_2}">${title}</circle>`;
     }
-    const hit = state.shape && withShape.has(i) ? ` class="dothit" tabindex="0" role="button" data-li="${i}"` : "";
-    svg += `<circle${hit} cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${fill}" ${stroke}><title>${L.name}${noData ? " (no open monosyllables in seed)" : ""}</title></circle>${flag}`;
   });
-  document.getElementById("map").innerHTML = svg + "</svg>";
+  document.getElementById("map").innerHTML =
+    `<svg viewBox="0 0 ${MAP_W} ${MAP_H}" role="img" aria-label="${state.shape ? `world map: languages with /${state.shape}/` : "world map of languages"}">`
+    + buildBasemap() + `<g>${ctx}</g><g>${hits}</g>` + mapLegend(review.size > 0) + "</svg>" + regionShareHTML(withShape);
   // the advertised loop closes on the map itself: lit dot → form sheet
   document.querySelectorAll("#map .dothit").forEach(c =>
     c.onclick = () => openSheet(`${CORE.languages[+c.dataset.li].glottocode}|${state.shape}`));
-  const unmappedNote = unmapped ? ` · ${unmapped} language(s) lack coordinates (listed but unmapped)` : "";
-  document.getElementById("mapnote").innerHTML = (state.shape
-    ? `Filled = has <span class="ipa">/${state.shape}/</span> · <b style="color:var(--review)">▪</b> = pending review · hollow ring = no open monosyllables (a structural claim, not a gap)`
-    : `Pick a shape to light up the languages that have it. Hollow rings = no open monosyllables in the seed.`) + unmappedNote;
+  const unmappedNote = unmapped ? `${unmapped} language(s) lack coordinates and are listed but not mapped.` : "";
+  document.getElementById("mapnote").innerHTML = (state.shape ? "" : "Pick a shape to light up the languages that have it. ") + unmappedNote;
+}
+// Legend inside the map, in the empty South Pacific: identity is never colour alone.
+function mapLegend(anyReview) {
+  const row = (y, mark, text) => `<g transform="translate(26 ${y})">${mark}<text x="9" y="3" font-size="8" fill="${INK_2}" font-family="system-ui,sans-serif">${text}</text></g>`;
+  const rows = state.shape
+    ? [row(0, `<circle r="3.2" fill="${DATA}" stroke="${RING}" stroke-width=".9"/>`, `has /${state.shape}/`),
+       row(11, `<circle r="1.4" fill="${INK_3}"/>`, "examined, does not have it"),
+       ...(anyReview ? [row(22, `<rect x="-1.5" y="-1.5" width="3" height="3" fill="${ALARM}"/>`, "pending review")] : [])]
+    : [row(0, `<circle r="1.9" fill="${INK_2}"/>`, "has open monosyllables"),
+       row(11, `<circle r="1.8" fill="none" stroke="${INK_3}" stroke-width=".7"/>`, "none among the words examined")];
+  return `<g aria-hidden="true" transform="translate(0 ${MAP_H - 44})">${rows.join("")}</g>`;
+}
+// Share of each region's languages that have the shape. Denominator: languages
+// with any open monosyllable in their sample — the ones that COULD show it.
+function regionShareHTML(withShape) {
+  if (!state.shape) return "";
+  const reg = new Map();
+  CORE.languages.forEach((L, i) => {
+    if (!L.form_count) return;
+    const k = L.macroarea || "Unlisted";
+    const r = reg.get(k) || { k, n: 0, hit: [] };
+    r.n++; if (withShape.has(i)) r.hit.push(i);
+    reg.set(k, r);
+  });
+  const rows = [...reg.values()].filter(r => r.n >= 5).sort((a, b) => b.hit.length / b.n - a.hit.length / a.n);
+  return `<div class="regshare" role="table" aria-label="share of each region's languages with /${state.shape}/">` + rows.map(r => {
+    const pct = 100 * r.hit.length / r.n, fams = families(r.hit).size;
+    return `<div class="rs" role="row"><span class="rsk" role="cell">${r.k}</span>
+      <span class="bar" role="cell"><i class="s-data" style="width:${pct.toFixed(1)}%"></i></span>
+      <span class="rsn" role="cell">${r.hit.length} of ${r.n} · ${Math.round(pct)}%${fams ? ` · ${fams} famil${fams === 1 ? "y" : "ies"}` : ""}</span></div>`;
+  }).join("") + `</div>`;
 }
 
 /* ---------- routing ---------- */
-const ROUTES = ["meanings", "explore", "languages", "regions", "convergence", "compare", "about", "sources"];
+const ROUTES = ["meanings", "explore", "languages", "compare", "about", "sources"];
 function navigateTo(route) {
   state.route = route;
   document.querySelectorAll("nav [data-route]").forEach(x => x.classList.toggle("active", x.dataset.route === route));
