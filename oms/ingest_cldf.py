@@ -15,6 +15,7 @@ from __future__ import annotations
 import csv
 import json
 import re
+import unicodedata
 from pathlib import Path
 
 # Allowlist (ADR-0002, widened per user decision "any CC is fine"). NC variants are
@@ -96,13 +97,68 @@ def _is_proto(name: str) -> bool:
     return bool(re.match(r"(?i)proto[-\s]", (name or "").strip()))
 
 
+# Datasets that ship SPELLINGS in Form and no Segments, with the few rules that
+# turn their orthography into IPA. ABVD (2026-09-29): 0 of 346,662 rows carry
+# Segments; ' / ʻ / ’ write the glottal stop, y is /j/, ng is /ŋ/ across
+# Austronesian orthographies. Only the respelled string is read as IPA, and as
+# graphemes: an unmarked vowel pair stays two nuclei (hiatus), so ABVD keeps
+# its single-vowel forms and loses its vowel sequences (user decision "A").
+_RESPELL = {
+    "abvd": (("ng", "ŋ"), ("'", "ʔ"), ("ʻ", "ʔ"), ("’", "ʔ"), ("`", "ʔ"), ("y", "j")),
+}
+
+
+# Marks that write VOWEL QUALITY in a spelling, differently per orthography:
+# circumflex (Yabem ê), breve (ă), horn (Vietnamese-based ư ơ), caron (ǎ).
+# Canon would read ̂ as tone and strip it, merging vowels. 4,360 ABVD rows in 338
+# languages (2026-09-29); excluded, counted, and outside `examined` (decision "A").
+_SPELLING_MARKS = {"\u0302", "\u0306", "\u031b", "\u030c"}
+
+
+# Acute and grave: on a longer word a stress mark (13,437 ABVD rows), stripped
+# harmlessly. On a ONE-vowel word stress cannot contrast, so the accent writes
+# vowel quality or tone — Chuukese pe / pé merged when it was stripped (12
+# languages had both). 207 such forms, measured 2026-09-29.
+_ACCENTS = {"\u0301", "\u0300"}
+_VOWEL_LETTERS = set("aeiouyɨʉɯɪʏʊøɘɵɤəɛœɜɞʌɔæɐɶɑɒ")
+
+
+def _spelling_exclusion(dataset: str, form: str) -> str | None:
+    if dataset not in _RESPELL:
+        return None
+    nfd = unicodedata.normalize("NFD", form)
+    if any(m in nfd for m in _SPELLING_MARKS):
+        return "spelling mark with no fixed IPA reading (vowel-quality ê ă ư ǎ) — excluded"
+    # count vowels in the RESPELLED form: ABVD y is /j/, so ráy has one vowel
+    respelled = unicodedata.normalize("NFD", _respell(dataset, form)).lower()
+    if any(a in nfd for a in _ACCENTS) and sum(ch in _VOWEL_LETTERS for ch in respelled) == 1:
+        return "accent on a one-vowel spelling: quality or tone, no fixed IPA reading — excluded"
+    return None
+
+
+# A macron writes vowel LENGTH across Pacific spellings (ā = aː); canon would
+# strip it as a tone mark and merge /maː/ with /ma/ (4,458 ABVD rows).
+_MACRON_IS_LENGTH = {"abvd"}
+
+
+def _respell(dataset: str, form: str) -> str:
+    if dataset in _MACRON_IS_LENGTH:
+        form = unicodedata.normalize("NFC", unicodedata.normalize("NFD", form).replace("\u0304", "ː"))
+    for old, new in _RESPELL.get(dataset, ()):
+        form = form.replace(old, new)
+    return form
+
+
 def _ipa(row: dict) -> str:
     """Prefer tokenized Segments (CLTS grapheme/BIPA tokens resolved to the BIPA
     side). Reject entries that are not attested free single words: reconstructions
     (*-marked in Form even when Segments strip the star), bound morphemes
     (edge hyphen in Form — Segments often lose it), polymorphemic entries
     (boundary tokens + _ # — joining across them mints fake monosyllables),
-    multi-word phrases, and uncertain/alternation annotations."""
+    multi-word phrases, and uncertain/alternation annotations.
+
+    With Segments the result keeps the source's segment boundaries as spaces
+    ("m ai" vs "m a i"): they are the source's syllable analysis."""
     raw = (row.get("Form") or row.get("Value") or "").strip()
     if raw.startswith("*"):
         return ""   # reconstruction (proto-form), not an attested word
@@ -121,7 +177,7 @@ def _ipa(row: dict) -> str:
                 if not t:
                     return ""   # "x/" — no BIPA normalization exists; skip row
             out.append(t)
-        joined = "".join(out)
+        joined = " ".join(out)
         if any(c in _ANNOTATION for c in joined):
             return ""   # uncertain/alternation form — skip (honest gap)
         return joined
@@ -145,12 +201,19 @@ def load(cldf_dir: str | Path, default_tier: str = "curated") -> dict:
         if not gc or gc in seen or _is_proto(r.get("Name", "")):
             continue
         seen.add(gc)
+        # Name by Glottolog: a source's Name is a doculect label ("A151_Nkongho",
+        # lowercase "anam") and two sources can give two glottocodes one name.
+        # The source's name stays as the alias, so a search still finds it.
+        gname = (r.get("Glottolog_Name") or "").strip()
         languages.append({
-            "glottocode": gc, "name": r["Name"], "macroarea": r.get("Macroarea", ""),
+            "glottocode": gc, "name": gname or r["Name"],
+            "alias": r["Name"] if gname and gname != r["Name"] else "",
+            "macroarea": r.get("Macroarea", ""),
             "latitude": float(r["Latitude"]) if r.get("Latitude") else None,
             "longitude": float(r["Longitude"]) if r.get("Longitude") else None,
             "doc_status": r.get("Doc_Status", "moderate"),
             "prosodic_type": r.get("Prosodic_Type", "unknown"),
+            "family": (r.get("Family") or "").strip(),
         })
 
     entries = []
@@ -162,6 +225,11 @@ def load(cldf_dir: str | Path, default_tier: str = "curated") -> dict:
         ipa = _ipa(r)
         if not gc or not ipa:
             continue
+        segmented = bool(r.get("Segments"))
+        exclude = None
+        if not segmented:
+            exclude = _spelling_exclusion(meta["id"], ipa)
+            ipa = ipa if exclude else _respell(meta["id"], ipa)
         param = params.get(r["Parameter_ID"], {})
         cid = param.get("Concepticon_ID") or None
         entries.append({
@@ -169,6 +237,9 @@ def load(cldf_dir: str | Path, default_tier: str = "curated") -> dict:
             "ipa": ipa,
             "gloss": param.get("Name") or param.get("Concepticon_Gloss") or r["Parameter_ID"],
             "concepticon_id": int(cid) if cid else None,
+            "concepticon_gloss": param.get("Concepticon_Gloss") or None,
             "source": meta["id"],
+            "segmented": segmented,
+            **({"exclude": exclude} if exclude else {}),
         })
     return {"sources": [meta], "languages": languages, "entries": entries}

@@ -15,11 +15,14 @@ from oms.openness import _segment, _VOWELS, _GLIDES
 
 # Onset manner classes (sonority-ordered-ish), ~9 rows for the heatmap.
 _NASAL = set("mnŋɲɳɴ")
-_STOP = set("pbtdʈɖcɟkgqɢʔ")
+_STOP = set("pbtdʈɖcɟkgɡqɢʔ")
 _IMPLOSIVE = set("ɓɗʄɠʛ")          # kept a visible class, never a gutter (mission)
-_FRICATIVE = set("fvθðszʃʒʂʐçʝxɣχʁħʕhɦɸβ")
-_AFFRICATE_HINT = set("ʦʣʧʤ")       # precomposed affricates (post-tie-bar-drop)
-_LIQUID = set("lrɾɽɭʎʟɫʀ")
+# ɕ ʑ: alveolo-palatal; ɬ ɮ: lateral fricatives; ʍ: voiceless labial-velar
+_FRICATIVE = set("fvθðszʃʒʂʐçʝxɣχʁħʕhɦɸβɕʑɬɮʍ")
+_AFFRICATE_HINT = set("ʦʣʧʤʨʥ")     # precomposed affricates (post-tie-bar-drop)
+_LIQUID = set("lrɾɽɭʎʟɫʀɹɻɺ")        # laterals, rhotics, and the r-like approximants
+_APPROXIMANT_GLIDE = set("ʋ")        # labiodental approximant: a glide, like w
+_GLOTTAL_MODIFIER = "ˀ"
 _CLICK = set("ǀǁǂǃʘ")
 
 
@@ -28,12 +31,21 @@ def _base(token: str) -> str:
 
 
 def onset_class(form: str) -> str:
-    """Class of the FIRST onset consonant; 'none' for a vowel/glide-initial form."""
-    for tok in _segment(form):
+    """Class of the FIRST onset consonant; 'none' for a vowel/glide-initial form.
+
+    A leading modifier letter (ⁿ ᵐ ᵑ ʰ ˀ — category Lm) marks the consonant after
+    it: prenasalized, pre-aspirated, pre-glottalized. It is skipped, so the
+    consonant decides. A lone ˀ before a vowel IS the onset: a glottal stop."""
+    toks = _segment(form)
+    for k, tok in enumerate(toks):
         b = _base(tok)
+        if unicodedata.category(b) == "Lm":
+            if b == _GLOTTAL_MODIFIER and k + 1 < len(toks) and _base(toks[k + 1]) in _VOWELS:
+                return "stop"
+            continue
         if b in _VOWELS:
             return "none"          # vowel-initial (∅ onset) — the null-onset row
-        if b in _GLIDES:
+        if b in _GLIDES or b in _APPROXIMANT_GLIDE:
             return "glide"
         if b in _NASAL:
             return "nasal"

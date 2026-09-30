@@ -10,8 +10,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+from collections import Counter
 from pathlib import Path
 
+from oms.baseline import RUNS, chance_bands
 from oms.model import TIERS
 from oms.pipeline import run
 
@@ -56,17 +59,20 @@ def bake(pipeline_out: dict) -> tuple[dict, dict]:
         },
         "languages": [
             {
-                "glottocode": l.glottocode, "name": l.name, "macroarea": l.macroarea,
+                "glottocode": l.glottocode, "name": l.name, "alias": l.alias, "macroarea": l.macroarea,
                 "latitude": l.latitude, "longitude": l.longitude,
                 "doc_status": l.doc_status, "prosodic_type": l.prosodic_type,
+                "family": l.family,
                 "form_count": form_count[l.glottocode],
+                "examined": pipeline_out["examined"].get(l.glottocode, 0),
+                "sample": pipeline_out["sample"].get(l.glottocode, ""),
             }
             for l in langs
         ],
         "shapes": sorted(shapes.values(), key=lambda s: s["shape"]),
         "postings": postings,
         "sources": [
-            {"id": s.id, "tier": s.tier, "license": s.license}
+            {"id": s.id, "tier": s.tier, "license": s.license, "kind": s.kind}
             for s in sorted(pipeline_out["sources"].values(), key=lambda s: (TIERS.index(s.tier), s.id))
         ],
     }
@@ -108,20 +114,88 @@ def build_concepts(pipeline_out: dict) -> dict:
                 # are sentence-length and a per-char slug blows past the 255-byte
                 # filename limit. ckey is opaque to the frontend; gloss text lives
                 # inside the chunk.
-                ckey = str(cid) if cid else "g-" + hashlib.sha1(g["gloss"].encode("utf-8")).hexdigest()[:16]
+                # casefolded, so "Go" and "go" are one unlinked gloss, not two
+                ckey = str(cid) if cid else "g-" + hashlib.sha1(g["gloss"].strip().casefold().encode("utf-8")).hexdigest()[:16]
                 c = concepts.setdefault(ckey, {
                     "ckey": ckey, "gloss": g["gloss"], "concepticon_id": cid,
+                    "concepticon_gloss": g.get("concepticon_gloss"), "votes": Counter(),
                     "langs": set(), "shapes": set(), "entries": []})
+                c["votes"][g["gloss"].strip()] += 1
                 c["langs"].add(li)
                 c["shapes"].add(f.segmental)
                 # entry: [langIdx, shape, tone, tierRank, ccRank, under_review]
                 c["entries"].append([li, f.segmental, w.tone, tr, cr, ur])
+    labels = concept_labels(concepts)
+    for k, c in concepts.items():
+        c["gloss"] = labels[k]
     return concepts
 
 
-def _concept_summary(concepts: dict) -> list[dict]:
+def _commonest(votes: dict) -> str:
+    """The commonest source gloss, ignoring case; shown in its commonest spelling."""
+    by_fold: dict[str, Counter] = {}
+    for g, n in votes.items():
+        by_fold.setdefault(g.casefold(), Counter())[g] += n
+    fold = max(by_fold, key=lambda f: (sum(by_fold[f].values()), f))
+    return max(by_fold[fold], key=lambda g: (by_fold[fold][g], g))
+
+
+def _concepticon_label(cg: str) -> str:
+    # Concepticon glosses are upper case; lower them, but the pronoun stays "I"
+    return re.sub(r"\bi\b", "I", cg.lower())
+
+
+def concept_labels(concepts: dict) -> dict[str, str]:
+    """One distinct label per concept (roadmap D4). A concept reads as its
+    sources call it, written the Concepticon way when it is the Concepticon
+    word ("Two" -> "two", "I" stays "I"). Where concepts would read alike:
+    an unlinked gloss is marked "(unlinked)" and never merged; a lone linked
+    concept keeps the word; among several linked ones, the concept whose
+    Concepticon gloss IS the word keeps it and the others read as their own
+    Concepticon gloss (IRRIGATE was listed as 'water' in 22 languages)."""
+    base = {}
+    for k, c in concepts.items():
+        b, cg = _commonest(c["votes"]), c.get("concepticon_gloss")
+        base[k] = _concepticon_label(cg) if cg and cg.casefold() == b.casefold() else b
+    groups: dict[str, list[str]] = {}
+    for k, b in base.items():
+        groups.setdefault(b.casefold(), []).append(k)
+    labels: dict[str, str] = {}
+    for fold, keys in groups.items():
+        linked = [k for k in keys if concepts[k].get("concepticon_id")]
+        for k in keys:
+            if k not in linked:
+                labels[k] = f"{base[k]} (unlinked)" if len(keys) > 1 else base[k]
+                continue
+            cg = concepts[k].get("concepticon_gloss")
+            if len(linked) == 1 or (cg and cg.casefold() == fold):
+                labels[k] = base[k]
+            else:
+                labels[k] = _concepticon_label(cg) if cg else f"{base[k]} ({concepts[k]['concepticon_id']})"
+    # A qualified label can still equal another concept's word. Mark the unlinked
+    # side first; a linked concept is qualified only by its own Concepticon id.
+    for _ in range(2):
+        seen: Counter = Counter(l.casefold() for l in labels.values())
+        for k, l in list(labels.items()):
+            if seen[l.casefold()] > 1:
+                if not concepts[k].get("concepticon_id"):
+                    if not l.endswith("(unlinked)"):
+                        labels[k] = f"{l} (unlinked)"
+                elif any(not concepts[j].get("concepticon_id") and labels[j].casefold() == l.casefold() for j in labels):
+                    continue   # the unlinked twin is marked on this pass
+                else:
+                    labels[k] = f"{l} ({concepts[k]['concepticon_id']})"
+    return labels
+
+
+def _concept_summary(concepts: dict, bands: dict) -> list[dict]:
+    # beyond = shapes more families share than ANY of the shuffles gave (see
+    # baseline.chance_bands); gap = the largest such excess, for sorting (B1)
+    def excess(k):
+        return [obs - top for obs, lo, hi, top in bands.get(k, {}).values() if obs > top]
     rows = [{"ckey": c["ckey"], "gloss": c["gloss"], "concepticon_id": c["concepticon_id"],
-             "lang_count": len(c["langs"]), "shape_count": len(c["shapes"])}
+             "lang_count": len(c["langs"]), "shape_count": len(c["shapes"]),
+             "beyond": len(excess(c["ckey"])), "gap": max(excess(c["ckey"]), default=0)}
             for c in concepts.values()]
     # hero ordering: broadest reach first, then tightest sound↔meaning convergence
     rows.sort(key=lambda r: (-r["lang_count"], r["shape_count"], r["gloss"]))
@@ -155,16 +229,35 @@ def write_build(pipeline_out: dict, outdir: Path, chunk: bool = False) -> tuple[
     core, forms_detail = bake(pipeline_out)
     # meaning is a hero axis: concept summary in core, concept detail as chunks
     concepts = build_concepts(pipeline_out)
-    core["concepts"] = _concept_summary(concepts)
+    bands = chance_bands(concepts, [l.family for l in pipeline_out["languages"].values()])
+    core["concepts"] = _concept_summary(concepts, bands)
+    core["meta"]["baseline"] = {"runs": RUNS, "tested": sum(len(b) for b in bands.values()),
+                                "beyond": sum(c["beyond"] for c in core["concepts"])}
     outdir.mkdir(parents=True, exist_ok=True)
     (outdir / "core.json").write_text(json.dumps(core, ensure_ascii=False, indent=1), encoding="utf-8")
     cdir = outdir / "concept"
     cdir.mkdir(exist_ok=True)
     for c in concepts.values():
         (cdir / f"{c['ckey']}.json").write_text(
-            json.dumps({"gloss": c["gloss"], "concepticon_id": c["concepticon_id"], "entries": c["entries"]},
+            json.dumps({"gloss": c["gloss"], "concepticon_id": c["concepticon_id"], "entries": c["entries"],
+                        "baseline": {s: list(b) for s, b in bands.get(c["ckey"], {}).items()}},
                        ensure_ascii=False), encoding="utf-8")
     swept = _sweep_stale(cdir, {f"{c['ckey']}.json" for c in concepts.values()})
+    # One gloss file per language: shape -> its meanings. The Languages view
+    # showed a card's meanings only once that shape's chunk happened to load;
+    # this is one small request per language instead of one per shape.
+    ldir = outdir / "lang"
+    ldir.mkdir(exist_ok=True)
+    by_lang: dict[str, dict[str, list[str]]] = {}
+    for fd in forms_detail.values():
+        gl = by_lang.setdefault(fd["glottocode"], {}).setdefault(fd["shape"], [])
+        for w in fd["words"]:
+            for g in w["gloss_set"]:
+                if g["gloss"] and g["gloss"] not in gl:
+                    gl.append(g["gloss"])
+    for gc, shapes in by_lang.items():
+        (ldir / f"{gc}.json").write_text(json.dumps(shapes, ensure_ascii=False), encoding="utf-8")
+    swept += _sweep_stale(ldir, {f"{gc}.json" for gc in by_lang})
     n_chunks = 0
     if chunk:
         shapedir = outdir / "shape"

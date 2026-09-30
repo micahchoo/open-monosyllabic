@@ -24,14 +24,35 @@ class TestOpennessCorpus(unittest.TestCase):
         ("ja", True, HIGH, False, "onset glide /j/ before nucleus — open"),
         ("mã", True, HIGH, False, "nasal vowel nucleus — open"),
         ("maː", True, HIGH, False, "long vowel nucleus — open"),
-        # VV diphthong nucleus (source segmented as two vowels) — open, high
-        ("ai", True, HIGH, False, "vowel+vowel diphthong — open, uncontested"),
-        ("nau", True, HIGH, False, "CVV diphthong — open, uncontested"),
-        # 3+ vowels: triphthong-vs-hiatus contested — open but medium/review
-        ("aua", True, MEDIUM, True, "3-vowel sequence — contested (triphthong vs hiatus)"),
+        # A diphthong is ONE nucleus only when the source says so: one segment
+        # (CLTS token "ai"), a tie bar, or a non-syllabic mark. Resolved by the
+        # source's own transcription -> medium, not pending review.
+        (["ai"], True, MEDIUM, False, "one-segment diphthong — open, source-resolved"),
+        (["n", "au"], True, MEDIUM, False, "CV diphthong segment — open, source-resolved"),
+        ("na͡u", True, MEDIUM, False, "tie bar joins the vowels into one segment"),
+        # Two vowel SEGMENTS are two nuclei: hiatus, two syllables (ru.a).
+        ("ai", False, HIGH, False, "unmarked vowel pair — two segments, two syllables"),
+        (["r", "u", "a"], False, HIGH, False, "Polynesian rua 'two' — ru.a, excluded"),
+        (["m", "a", "i"], False, HIGH, False, "source split the vowels — excluded"),
+        ("aua", False, HIGH, False, "three vowel segments — excluded"),
+        # 3+ vowels inside ONE segment: triphthong the source asserts — contested
+        (["aua"], True, MEDIUM, True, "one-segment triphthong — contested"),
+        # a non-syllabic vowel after the nucleus is a glide (Wiktionary aɪ̯)
+        ("aɪ̯", True, MEDIUM, True, "non-syllabic mark = offglide, like /aj/"),
         # V+glide — the contested case: ADR-0001 rules OPEN but medium confidence
         ("baj", True, MEDIUM, True, "bye /baj/ — final glide → diphthong, contested"),
         ("naw", True, MEDIUM, True, "now /naw/ — final glide → diphthong, contested"),
+        # A nasal written as its OWN segment before a consonant is ambiguous: a
+        # syllabic nasal (Bantu n̩.ku, two syllables), a pre-initial (Tibeto-Burman
+        # m.dza, one syllable) or an unmerged prenasalized stop. Segmentation does
+        # not settle it (measured 2026-09-29), so the form stays, contested.
+        (["m", "b", "a"], True, MEDIUM, True, "separate nasal before a stop — contested"),
+        (["n", "k", "u"], True, MEDIUM, True, "Bantu n̩.ku? — contested, pending review"),
+        (["m", "dz", "a"], True, MEDIUM, True, "Tibeto-Burman pre-initial — contested, not excluded"),
+        (["n", "n", "j", "a"], True, MEDIUM, True, "separate nasal before a nasal — contested"),
+        (["mb", "a"], True, HIGH, False, "prenasalized stop, one segment — open"),
+        ("ⁿba", True, HIGH, False, "superscript nasal marks prenasalization — open"),
+        (["m", "w", "a"], True, HIGH, False, "nasal before a glide is an ordinary onset — open"),
         # closed — coda consonant → excluded
         ("mat", False, HIGH, False, "CVC coda — closed, excluded"),
         ("man", False, HIGH, False, "CVC nasal coda — closed, excluded"),
@@ -55,7 +76,7 @@ class TestOpennessCorpus(unittest.TestCase):
 
     def test_diphthongs_are_in(self):
         # ADR-0001: diphthongs count as open (inclusive posture).
-        self.assertTrue(classify_openness("ai").is_open)
+        self.assertTrue(classify_openness(["ai"]).is_open)
         self.assertTrue(classify_openness("baj").is_open)
 
     def test_syllabic_consonants_are_out(self):

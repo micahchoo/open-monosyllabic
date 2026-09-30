@@ -13,6 +13,14 @@ A word (or permitted word-shape) of exactly one syllable whose nucleus is a **vo
 A single language variety, identified by its Glottolog code (a standard registry of the world's languages). Carries three first-class metadata/typological attributes: **macroarea/region + coordinates** (from Glottolog), **documentation-status** (how well-described the variety is — lets the tool distinguish "no data sourced yet" from "genuinely absent"), and **prosodic type / word-minimality** (whether the language structurally permits open *light* monosyllables at all; research.md §1). These make an uneven per-language yield interpretable rather than noise. _(These are data-quality/typological metadata; the Global-South priority remains implicit — no mission-accountability surface is built on them.)_
 _Avoid_: dialect (a variety may or may not be a separate Glottolog entry — don't conflate), tongue.
 
+**Family**:
+The Glottolog top-level family of a Language (e.g. Austronesian), read from each source's `Family` column. Languages in one family share history, so a count of languages that share a Shape is shown with its count of families: 134 Austronesian languages agreeing is one fact, not 134.
+_Avoid_: stock, phylum, group.
+
+**Examined**:
+The number of distinct words of a Language that the openness rule judged — the denominator of its yield. A Language with no Forms has "none among N examined", which is a statement about the sample, never about the language.
+_Avoid_: total, vocabulary size.
+
 **Form**:
 The backbone entity — an open monosyllable as attested in **one specific Language** (e.g. /ma/ in Mandarin), identified by its **canonicalized (CLTS BroadIPA) tone-blind segmental IPA**. Belongs to exactly one Language. Meaning-agnostic and always present: a Language is represented by its Forms even when no meaning data exists. Carries language-specific facts (which tones occur; a **Confidence Tier** for source provenance and a **Classification Confidence** for the openness call; one or more **Sources**; example Words).
 _Avoid_: word (a Form has no meaning attached), syllable (too general).
@@ -54,7 +62,7 @@ _Avoid_: sound, clip, pronunciation (ambiguous with the IPA).
 _Model: separate-per-language (no shared Shape entity). Confirmed by user._
 
 - A **Language** has many **Forms**; a **Form** belongs to exactly one **Language**.
-- A **Language** carries **macroarea/region + coordinates**, **documentation-status**, and **prosodic type / word-minimality** attributes.
+- A **Language** carries **macroarea/region + coordinates**, **Family**, **Examined**, **documentation-status**, and **prosodic type / word-minimality** attributes.
 - A **Form** has zero or many **Words** (example words carrying meaning); a **Word** belongs to exactly one **Form**.
 - Every sourced entry (**Form**, **Word**) carries one **Confidence Tier**, one **Classification Confidence**, and **one or more Sources** (conflicts retained; one marked preferred for display).
 - A **Form** or **Word** may have **Audio**, badged **recorded** or **synthesized** — a provenance axis independent of the two confidence axes.
@@ -70,7 +78,7 @@ _Model: separate-per-language (no shared Shape entity). Confirmed by user._
 
 - A **Form** is identified by (**Language** + **canonicalized (CLTS BroadIPA)** tone-blind segmental IPA). Canonicalization runs *before* the key is formed, under a **versioned scheme** stamped into the key so reprocessing under a new scheme doesn't silently rot deep links. Same language + same canonical string ⇒ same Form (tone differences do not split it; they are recorded as the set of tones the Form takes).
 - **Shape** grouping key = the canonical tone-blind segmental IPA string alone; same canonical string across languages ⇒ same Shape group.
-- **Inclusion rule** (what counts as an open monosyllable): one syllable · nucleus is a vowel or diphthong · no coda. Diphthongs in, syllabic consonants out. See [ADR-0001](docs/adr/0001-open-monosyllable-inclusion-rule.md). The per-entry uncertainty of this call is carried as **Classification Confidence**.
+- **Inclusion rule** (what counts as an open monosyllable): one syllable · nucleus is a vowel or diphthong · no coda. The syllable count is read from the source's SEGMENTS: two vowel segments are two syllables; a diphthong is one nucleus only when the source writes it as one segment, with a tie bar, or with a non-syllabic mark. A nasal written as its own segment before a consonant is contested (syllabic nasal or pre-initial) — kept, under review. Diphthongs in, syllabic consonants out. See [ADR-0001](docs/adr/0001-open-monosyllable-inclusion-rule.md). The per-entry uncertainty of this call is carried as **Classification Confidence**.
 - A **Word** is identified by (**Form** + tone + **Gloss**); _mā_ 'mother' and _mǎ_ 'horse' are distinct Words sharing one Form. A Word may carry more than one **Gloss** (polysemy) without splitting into two Words. _(Proposed default; correct if wrong.)_
 
 ## Example dialogue

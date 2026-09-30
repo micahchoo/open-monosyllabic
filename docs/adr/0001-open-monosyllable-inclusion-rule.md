@@ -16,3 +16,9 @@ Whether a short word "counts as open" is genuinely theory-dependent, and defensi
 
 - Per-language yield skews larger than a strict analysis would give; English and other diphthong-rich languages contribute heavily.
 - The nucleus classifier must reliably distinguish a diphthong nucleus from a vowel+glide sequence — a known hard case in automatic transcription, and a place where machine-guessed data will need extra scrutiny.
+
+## Addendum 2026-09-29 — syllables are counted from the source's segments
+
+**Vowels.** A nucleus is one vowel *segment*. Two vowel segments are two syllables (hiatus: Polynesian *ru.a* 'two') and the form is excluded. Two vowels are one diphthong nucleus only when the source says so: one segment (`ai` in CLDF Segments), a tie bar (`a͡i`), or a non-syllabic mark (`aɪ̯`). A source-marked diphthong is *medium* Classification Confidence. Sources without segments (ABVD) are respelled first, and their vowel pairs drop out, because a spelling cannot tell the two cases apart. Before this, any two adjacent vowel letters counted as a high-confidence diphthong, which admitted ~22k two-syllable postings.
+
+**Nasals.** A nasal written as its own segment before a consonant (`m b a`, `n k u`, `m dz a`) is *contested*, not excluded: the form stays, at medium confidence, under review. The first ruling excluded these as syllabic nasals (Bantu *n̩.ku*). Measured on the build, that removed ~350 Tibeto-Burman forms whose nasal is a pre-initial inside one syllable (*m.dza*), and Bantu and Chadic sources split prenasalized stops for reasons of dataset preparation, not analysis. Segmentation is evidence for vowels here but not for nasals. One segment (`mb`) or a superscript nasal (`ⁿb`) reads as a prenasalized stop and is uncontested.

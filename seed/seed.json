@@ -25,7 +25,8 @@
    "latitude": 34.3,
    "longitude": 108.9,
    "doc_status": "well",
-   "prosodic_type": "permits-open-light"
+   "prosodic_type": "permits-open-light",
+   "family": "Sino-Tibetan"
   },
   {
    "glottocode": "yoru1245",
@@ -34,7 +35,8 @@
    "latitude": 7.4,
    "longitude": 3.9,
    "doc_status": "moderate",
-   "prosodic_type": "permits-open-light"
+   "prosodic_type": "permits-open-light",
+   "family": "Atlantic-Congo"
   },
   {
    "glottocode": "hawa1245",
@@ -43,7 +45,8 @@
    "latitude": 19.7,
    "longitude": -155.5,
    "doc_status": "well",
-   "prosodic_type": "permits-open-light"
+   "prosodic_type": "permits-open-light",
+   "family": "Austronesian"
   },
   {
    "glottocode": "viet1252",
@@ -52,7 +55,8 @@
    "latitude": 21.0,
    "longitude": 105.8,
    "doc_status": "well",
-   "prosodic_type": "permits-open-light"
+   "prosodic_type": "permits-open-light",
+   "family": "Austroasiatic"
   },
   {
    "glottocode": "finn1318",
@@ -61,7 +65,8 @@
    "latitude": 62.0,
    "longitude": 26.0,
    "doc_status": "well",
-   "prosodic_type": "bimoraic-minimum"
+   "prosodic_type": "bimoraic-minimum",
+   "family": "Uralic"
   },
   {
    "glottocode": "fiji1243",
@@ -70,7 +75,8 @@
    "latitude": -18.0,
    "longitude": 178.0,
    "doc_status": "moderate",
-   "prosodic_type": "permits-open-light"
+   "prosodic_type": "permits-open-light",
+   "family": "Austronesian"
   },
   {
    "glottocode": "bell1243",
@@ -79,7 +85,8 @@
    "latitude": 52.4,
    "longitude": -126.7,
    "doc_status": "moderate",
-   "prosodic_type": "consonant-heavy"
+   "prosodic_type": "consonant-heavy",
+   "family": "Salishan"
   }
  ],
  "entries": [
@@ -141,7 +148,7 @@
   },
   {
    "glottocode": "hawa1245",
-   "ipa": "wai",
+   "ipa": "wa͡i",
    "gloss": "water",
    "concepticon_id": 948,
    "source": "lexibank-seed"
@@ -169,7 +176,7 @@
   },
   {
    "glottocode": "finn1318",
-   "ipa": "tie",
+   "ipa": "ti͡e",
    "gloss": "road",
    "concepticon_id": 1264,
    "source": "northeuralex-0.9"

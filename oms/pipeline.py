@@ -48,22 +48,34 @@ def run_datasets(datasets: list[dict]) -> dict:
     entries: list[dict] = []
     for data in datasets:
         for s in data["sources"]:
-            sources[s["id"]] = Source(s["id"], s["tier"], s["license"])
+            sources[s["id"]] = Source(s["id"], s["tier"], s["license"], s.get("kind", "word list"))
         for l in data["languages"]:
-            languages.setdefault(l["glottocode"], Language(**l))
+            lang = languages.setdefault(l["glottocode"], Language(**l))
+            if not lang.family and l.get("family"):   # WikiPron gives none; a CLDF set may
+                lang.family = l["family"]
         entries.extend(data["entries"])
 
     forms: dict[str, Form] = {}
     excluded: list[dict] = []
+    # The denominator: distinct canonical words per language that the openness
+    # rule judged. A yield means "open forms of N examined" — a 200-word list and
+    # a 5,000-word dictionary are not the same sample.
+    judged: dict[str, set[str]] = {}
+    kinds: dict[str, set[str]] = {}   # which kinds of source the judged words came from
 
     for e in entries:
         src = sources[e["source"]]
-        canon = canonicalize(e["ipa"])
+        if e.get("exclude"):   # decided at ingest (spelling with no fixed reading): counted, never examined
+            excluded.append({"ipa": e["ipa"], "glottocode": e["glottocode"], "reason": e["exclude"]})
+            continue
+        canon = canonicalize(e["ipa"], segmented=e.get("segmented", False))
         if not is_clean_ipa(canon.segmental):   # hygiene: drop reconstruction/cover-symbol/annotation noise
             excluded.append({"ipa": e["ipa"], "glottocode": e["glottocode"],
                              "reason": "non-IPA notation (reconstruction/cover-symbol/annotation)"})
             continue
-        op = classify_openness(canon.segmental)
+        op = classify_openness(canon.segments)
+        judged.setdefault(e["glottocode"], set()).add(" ".join(canon.segments))
+        kinds.setdefault(e["glottocode"], set()).add(src.kind)
         if not op.is_open:
             excluded.append({"ipa": e["ipa"], "glottocode": e["glottocode"], "reason": op.reason})
             continue
@@ -106,7 +118,8 @@ def run_datasets(datasets: list[dict]) -> dict:
             w.tier = ratchet(w.tier, src.tier) if w.sources else src.tier
             if src.id not in w.sources:
                 w.sources.append(src.id)
-            g = {"gloss": e["gloss"], "concepticon_id": e.get("concepticon_id"), "source_id": src.id}
+            g = {"gloss": e["gloss"], "concepticon_id": e.get("concepticon_id"),
+                 "concepticon_gloss": e.get("concepticon_gloss"), "source_id": src.id}
             if g not in w.gloss_set:   # sources repeat rows (synonym/variant rows); don't ship duplicates
                 w.gloss_set.append(g)
 
@@ -126,6 +139,8 @@ def run_datasets(datasets: list[dict]) -> dict:
         "sources": sources,
         "forms": form_list,
         "excluded": excluded,
+        "examined": {g: len(ws) for g, ws in judged.items()},
+        "sample": {g: ks.pop() if len(ks) == 1 else "mixed" for g, ks in kinds.items()},
         "zero_form_languages": zero_form_langs,
     }
 

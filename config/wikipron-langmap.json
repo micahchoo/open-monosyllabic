@@ -1,0 +1,103 @@
+{
+ "_note": "WikiPron ISO-639-3 → Glottocode map for the mined tier. Focus: West Africa (Yoruboid/Igboid/Chadic — no CLDF coverage) + Indian subcontinent (Indo-Aryan/Dravidian). Coordinates approximate.",
+ "yor": {
+  "glottocode": "yoru1245",
+  "name": "Yoruba",
+  "macroarea": "Africa",
+  "latitude": 7.4,
+  "longitude": 3.9,
+  "doc_status": "well",
+  "prosodic_type": "permits-open-light",
+  "family": "Atlantic-Congo"
+ },
+ "hau": {
+  "glottocode": "haus1257",
+  "name": "Hausa",
+  "macroarea": "Africa",
+  "latitude": 11.0,
+  "longitude": 8.5,
+  "doc_status": "well",
+  "prosodic_type": "permits-open-light",
+  "family": "Afro-Asiatic"
+ },
+ "ibo": {
+  "glottocode": "nucl1417",
+  "name": "Igbo",
+  "macroarea": "Africa",
+  "latitude": 6.0,
+  "longitude": 7.3,
+  "doc_status": "well",
+  "prosodic_type": "permits-open-light",
+  "family": "Atlantic-Congo"
+ },
+ "wol": {
+  "glottocode": "wolo1247",
+  "name": "Wolof",
+  "macroarea": "Africa",
+  "latitude": 15.0,
+  "longitude": -16.0,
+  "doc_status": "well",
+  "prosodic_type": "permits-open-light",
+  "family": "Atlantic-Congo"
+ },
+ "hin": {
+  "glottocode": "hind1269",
+  "name": "Hindi",
+  "macroarea": "Eurasia",
+  "latitude": 25.0,
+  "longitude": 78.0,
+  "doc_status": "well",
+  "prosodic_type": "unknown",
+  "family": "Indo-European"
+ },
+ "ben": {
+  "glottocode": "beng1280",
+  "name": "Bengali",
+  "macroarea": "Eurasia",
+  "latitude": 24.0,
+  "longitude": 89.0,
+  "doc_status": "well",
+  "prosodic_type": "unknown",
+  "family": "Indo-European"
+ },
+ "tam": {
+  "glottocode": "tami1289",
+  "name": "Tamil",
+  "macroarea": "Eurasia",
+  "latitude": 11.0,
+  "longitude": 78.0,
+  "doc_status": "well",
+  "prosodic_type": "unknown",
+  "family": "Dravidian"
+ },
+ "tel": {
+  "glottocode": "telu1262",
+  "name": "Telugu",
+  "macroarea": "Eurasia",
+  "latitude": 16.0,
+  "longitude": 79.0,
+  "doc_status": "well",
+  "prosodic_type": "unknown",
+  "family": "Dravidian"
+ },
+ "mal": {
+  "glottocode": "mala1464",
+  "name": "Malayalam",
+  "macroarea": "Eurasia",
+  "latitude": 10.0,
+  "longitude": 76.0,
+  "doc_status": "well",
+  "prosodic_type": "unknown",
+  "family": "Dravidian"
+ },
+ "mar": {
+  "glottocode": "mara1378",
+  "name": "Marathi",
+  "macroarea": "Eurasia",
+  "latitude": 17.93,
+  "longitude": 76.67,
+  "doc_status": "well",
+  "prosodic_type": "unknown",
+  "family": "Indo-European"
+ }
+}

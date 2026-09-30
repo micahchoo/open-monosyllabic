@@ -42,6 +42,15 @@ class TestCanonCorpus(unittest.TestCase):
         #     canonicalizes identically ---
         ("ãː", "ãː", "", "nasal + long"),
         ("ãː", "ãː", "", "same, decomposed input order -> same key"),
+        # --- one key per sound: notational variants fold (2026-09-29) ---
+        ("ga", "ɡa", "", "ASCII g is the IPA script g — /go/ and /ɡo/ were split"),
+        ("ma:", "maː", "", "ASCII colon writes length"),
+        ("ma·", "maː", "", "middle dot writes length"),
+        # Sinological letters have one fixed meaning: the alveolo-palatal series.
+        # Written as IPA with the advanced mark, so they stay distinct from ɲ, c.
+        ("ȵa", "ɲ̟a", "", "Sinological ȵ = alveolo-palatal nasal ɲ̟"),
+        ("ȶa", "c̟a", "", "Sinological ȶ = alveolo-palatal stop c̟"),
+        ("ȡa", "ɟ̟a", "", "Sinological ȡ = voiced alveolo-palatal stop ɟ̟"),
     ]
 
     def test_scheme_version(self):
@@ -94,6 +103,44 @@ class TestCanonCorpus(unittest.TestCase):
         # a tone-digit-labelled polysyllable canonicalizes to an ASCII-cap cover string → rejected
         self.assertFalse(is_clean_ipa(canonicalize("A31nA31dzɨ").segmental))
         self.assertFalse(is_clean_ipa("◌jɐ"), "dotted-circle placeholder (Wiktionary sign entry)")
+
+
+class TestHygiene(unittest.TestCase):
+    def test_spelling_letters_without_a_confirmed_ipa_reading_are_not_ipa(self):
+        # ABVD only: đ is Vietnamese spelling (đường), ȥ has no reading we can confirm
+        self.assertFalse(is_clean_ipa("đa"))
+        self.assertFalse(is_clean_ipa("ȥa"))
+        self.assertTrue(is_clean_ipa("ɲ̟a"))
+
+    def test_the_last_non_ipa_letters_are_not_ipa(self):
+        # the 12 shapes left in the heatmap's "other" row on 2026-09-29
+        for bad in ("ßɪj", "Ɵe", "ǥo", "ɩŋʌ", "ᶮɈa", "–mu", "\uf182ɡo", "ɿu", "ʅa", "Ŋa"):
+            with self.subTest(bad=bad):
+                self.assertFalse(is_clean_ipa(bad))
+        for good in ("ɓa", "ʔa", "ǀa", "ʘa", "ɕa", "ⁿba"):
+            with self.subTest(good=good):
+                self.assertTrue(is_clean_ipa(good))
+
+
+class TestSegments(unittest.TestCase):
+    """Canon keeps the segment boundaries: a syllable count depends on them."""
+
+    def test_segmented_input_keeps_source_tokens(self):
+        c = canonicalize("m ai", segmented=True)
+        self.assertEqual(c.segments, ("m", "ai"))
+        self.assertEqual(c.segmental, "mai", "the Shape key stays the joined string")
+
+    def test_unsegmented_input_splits_per_grapheme(self):
+        self.assertEqual(canonicalize("mai").segments, ("m", "a", "i"))
+        self.assertEqual(canonicalize("kʰã˥").segments, ("kʰ", "ã"))
+
+    def test_tie_bar_joins_graphemes_into_one_segment(self):
+        self.assertEqual(canonicalize("wa͡i").segments, ("w", "ai"))
+        self.assertEqual(canonicalize("t͡sa").segments, ("ts", "a"))
+
+    def test_tone_only_tokens_are_dropped(self):
+        c = canonicalize("z ə ⁵⁵", segmented=True)
+        self.assertEqual((c.segments, c.tone), (("z", "ə"), "⁵⁵"))
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ here it points at seed + the CLDF demo fixture.
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 
@@ -26,10 +27,12 @@ _ORTHOGRAPHIC = {"dyenindoeuropean"}
 
 
 def _discover_cldf(root: Path) -> list[Path]:
-    """CLDF datasets = dirs with forms.csv + languages.csv + a metadata file.
-    Covers the demo fixture and any real dataset cloned under sources/."""
+    """CLDF datasets = dirs with forms.csv + languages.csv + a metadata file,
+    cloned under sources/. Never seed/: the seed and the CLDF demo are TEST
+    inputs, and until 2026-09-29 they shipped in the catalog citing tools that
+    never ran (epitran) and datasets never ingested (northeuralex-0.9)."""
     dirs = []
-    for base in [root / "seed" / "cldf_demo", *sorted((root / "sources").glob("*/cldf")), *sorted((root / "sources").glob("*"))]:
+    for base in [*sorted((root / "sources").glob("*/cldf")), *sorted((root / "sources").glob("*"))]:
         if {base.name, base.parent.name} & _ORTHOGRAPHIC:
             print(f"  EXCLUDE {base.relative_to(root)}: orthography-only (no IPA), see _ORTHOGRAPHIC")
             continue
@@ -39,10 +42,33 @@ def _discover_cldf(root: Path) -> list[Path]:
     return dirs
 
 
-def main() -> None:
-    root = Path(__file__).resolve().parent.parent
-    seed = json.loads((root / "seed" / "seed.json").read_text(encoding="utf-8"))
-    datasets = [seed]
+def _glottolog_names(root: Path) -> dict[str, str]:
+    """Glottocode -> name from Glottolog itself (sources/glottolog-cldf, a sparse
+    clone of glottolog/glottolog-cldf, CC-BY-4.0). A source's Glottolog_Name
+    column can be stale: grollemundbantu named three glottocodes "Tuki"."""
+    path = root / "sources" / "glottolog-cldf" / "cldf" / "languages.csv"
+    if not path.exists():
+        return {}
+    with path.open(encoding="utf-8", newline="") as fh:
+        return {r["ID"]: r["Name"] for r in csv.DictReader(fh) if r.get("Name")}
+
+
+def _apply_names(datasets: list[dict], names: dict[str, str]) -> None:
+    """Name every language by Glottolog; the name it had becomes the alias,
+    unless the source's own doculect name is already there."""
+    for ds in datasets:
+        for lang in ds["languages"]:
+            g = names.get(lang["glottocode"])
+            if g and g != lang["name"]:
+                lang["alias"] = lang.get("alias") or lang["name"]
+                lang["name"] = g
+            if lang.get("alias") == lang["name"]:
+                lang["alias"] = ""
+
+
+def collect(root: Path) -> list[dict]:
+    """Every real dataset under root/sources/, loaded and named by Glottolog."""
+    datasets = []
     for d in _discover_cldf(root):
         try:
             datasets.append(load_cldf(d))
@@ -50,10 +76,19 @@ def main() -> None:
         except (ValueError, FileNotFoundError) as e:
             print(f"  SKIP {d.relative_to(root)}: {e}")
     # mined tier: WikiPron (a different format than CLDF)
-    if (root / "sources" / "wikipron" / "langmap.json").exists():
+    if (root / "sources" / "wikipron" / "tsv").is_dir():
         datasets.append(load_wikipron(root / "sources" / "wikipron"))
         print("  ingested sources/wikipron (mined tier)")
-    out = run_datasets(datasets)
+    names = _glottolog_names(root)
+    if names:
+        _apply_names(datasets, names)
+        print(f"  named {len(names)} glottocodes from sources/glottolog-cldf")
+    return datasets
+
+
+def main() -> None:
+    root = Path(__file__).resolve().parent.parent
+    out = run_datasets(collect(root))
 
     version = out["scheme_version"]
     reldir = f"scaled/{version}"

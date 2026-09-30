@@ -6,7 +6,7 @@ gloss, no Concepticon. This is the route to families with NO CLDF coverage —
 Yoruboid, Igboid, Chadic beyond single tokens — so it is the key to West Africa.
 
 Tier = `mined`; licence = CC-BY-SA-3.0 (Wiktionary-derived; gate PASS, share-alike
-attaches). Reads a `langmap.json` mapping each TSV's ISO-639-3 code to a Glottocode
+attaches). Reads `config/wikipron-langmap.json`, mapping each TSV's ISO-639-3 code to a Glottocode
 + metadata (WikiPron keys on ISO, the catalog keys on Glottocode). Forms-only:
 Words/glosses are absent, so these languages appear as Forms with no example Words
 — exactly the graceful degradation the domain model was built for.
@@ -18,7 +18,7 @@ import json
 import unicodedata
 from pathlib import Path
 
-SOURCE = {"id": "wikipron", "tier": "mined", "license": "CC-BY-SA-3.0"}
+SOURCE = {"id": "wikipron", "tier": "mined", "license": "CC-BY-SA-3.0", "kind": "dictionary"}
 
 
 def _is_noise_word(w: str) -> bool:
@@ -51,9 +51,15 @@ def _is_noise_word(w: str) -> bool:
     return False
 
 
-def load(wikipron_dir: str | Path) -> dict:
+# Hand-made (families, coordinates), so it lives under git — not beside the TSVs
+# in the gitignored sources/ clone.
+LANGMAP = Path(__file__).resolve().parent.parent / "config" / "wikipron-langmap.json"
+
+
+def load(wikipron_dir: str | Path, langmap_path: str | Path = LANGMAP) -> dict:
     d = Path(wikipron_dir)
-    langmap = json.loads((d / "langmap.json").read_text(encoding="utf-8"))
+    langmap = json.loads(Path(langmap_path).read_text(encoding="utf-8"))
+    langmap.pop("_note", None)
     languages, entries = [], []
     for iso, meta in langmap.items():
         tsv = d / "tsv" / f"{iso}.tsv"
@@ -69,6 +75,7 @@ def load(wikipron_dir: str | Path) -> dict:
             "latitude": meta.get("latitude"), "longitude": meta.get("longitude"),
             "doc_status": meta.get("doc_status", "moderate"),
             "prosodic_type": meta.get("prosodic_type", "unknown"),
+            "family": meta.get("family", ""),
         })
         for line in tsv.read_text(encoding="utf-8").splitlines():
             if not line.strip() or "\t" not in line:
@@ -76,7 +83,7 @@ def load(wikipron_dir: str | Path) -> dict:
             word, ipa = line.split("\t", 1)
             if _is_noise_word(word):             # drop letter-name / acronym noise
                 continue
-            ipa = ipa.replace(" ", "").strip()   # WikiPron space-separates phonemes
+            ipa = ipa.strip()   # WikiPron space-separates segments; the boundaries are kept
             if not ipa:
                 continue
             # keep the first comma/semicolon segment: wiktextract senses are prose
@@ -88,5 +95,6 @@ def load(wikipron_dir: str | Path) -> dict:
                 entries.append({
                     "glottocode": meta["glottocode"], "ipa": ipa,
                     "gloss": g, "concepticon_id": None, "source": SOURCE["id"],
+                    "segmented": True,
                 })
     return {"sources": [SOURCE], "languages": languages, "entries": entries}

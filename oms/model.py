@@ -30,6 +30,7 @@ class Source:
     id: str
     tier: str          # one of TIERS
     license: str       # SPDX-ish, cleared at Phase-0 gate
+    kind: str = "word list"   # word list | dictionary — what a rate from it means (roadmap B2)
 
 
 @dataclass
@@ -41,6 +42,8 @@ class Language:
     longitude: float | None
     doc_status: str         # well | moderate | under  (distinguishes no-data from absent)
     prosodic_type: str      # permits-open-light | bimoraic-min | unknown
+    family: str = ""        # Glottolog top-level family; "" = isolate or not given
+    alias: str = ""         # the source's own doculect name, when it differs from Glottolog's
 
 
 @dataclass
