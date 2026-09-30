@@ -1,5 +1,104 @@
 # HANDOFF — Open Monosyllabic web Explorer
 
+## 2026-09-29 — data model + UI rework (uncommitted, awaiting review)
+
+**Data (Phase 1a/1b, tests green: `python3 -m pytest -q`, 49 pass).**
+- Syllables are counted from SOURCE SEGMENTS (`Canon.segments`), not letters.
+  Two vowel segments = two syllables → excluded. Rule:
+  `.claude/rules/oms-syllables-are-segments.md`. ABVD (no Segments) is respelled
+  (`ingest_cldf._RESPELL`) and loses its vowel pairs (user decision "A").
+  Catalog 13,819 → 7,599 shapes, 53,346 → 33,156 postings; /rua/ gone.
+- Languages carry `family` and `examined` (words judged). CONTEXT.md defines both.
+- Families for seed + WikiPron languages: `seed/seed.json`, and
+  `sources/wikipron/langmap.json` (UNTRACKED — back it up).
+
+**UI (Phase 2, verified by headless screenshots, not by a human click-through).**
+Views 8 → 6. Look-alikes merged into Meanings (shapes ranked by family spread,
+chance caveat inline); Regions → region/family selects on Languages; languages
+ranked by rate "N of M words" (<30 words sorts last as "small sample"); map
+hollow ring = "none among the words examined"; curated badge shown only as
+the exception. Old `#v=`/`#r=` deep links still resolve.
+
+**Roadmap (https://claude.ai/artifact/2Vo1YKRNdrPehr68RPPbY7), Stage 1 progress:**
+- D1 done: `scaleout.collect()` reads `sources/` only; the seed and CLDF demo are
+  test inputs. Mandarin, Finnish, Nuxalk left the catalog (fixture-only). The
+  generated tier is empty, so the UI hides it (`TIERS_PRESENT`).
+- D5 done: `config/wikipron-langmap.json` (tracked).
+- D2 part 1 done: canon folds `g→ɡ`, `: ·→ː`. Left: `ȵ ȶ ȥ đ` need each
+  source's own profile checked before a `_RESPELL` entry.
+- D3 done: languages are named by the source's `Glottolog_Name`; the source name
+  is `alias` (searchable, shown as "source name"). Names still shared by two
+  glottocodes get the code in the UI. CAVEAT: grollemundbantu's Glottolog_Name
+  looks stale (three glottocodes named "Tuki"); only real Glottolog can fix it.
+- D4 done: `bake.concept_labels` — no two meanings share a label; IRRIGATE no
+  longer reads 'water'; unlinked glosses marked "(unlinked)" only on collision.
+- D6 done, REVISED: a bare nasal segment before a consonant is CONTESTED (kept,
+  under review), not excluded. Excluding it (the approved first rule) removed
+  ~350 Tibeto-Burman pre-initial forms (m dz a = one syllable). ADR-0001 addendum.
+  3,488 postings now under review.
+- D2 done: canon folds ȵ→ɲ̟, ȶ→c̟, ȡ→ɟ̟ (Sinological, fixed meaning); đ ȥ are
+  non-IPA (ABVD spelling only). "other" onset 703 → 588.
+- NEW D7: ABVD spelling varies per language. 4,360 rows in 338 languages use
+  circumflex/breve/horn/caron for VOWEL QUALITY (Yabem ê, Paicî, Vietnamese-based
+  Jarai/Rhade/Cham). Canon reads ̂ as tone and strips it, merging vowels; the
+  y→j respell is wrong where y is a vowel. Needs a per-orthography decision.
+- D7 done (option A): ABVD rows with ê ă ư ǎ are excluded at ingest with a reason
+  (`entry["exclude"]`, counted in `excluded`, outside `examined`): 3,792 rows,
+  242 languages. OPEN, not decided: ABVD macron ā writes LENGTH (4,458 rows,
+  521 languages) but canon strips it as tone, merging /maː/ and /ma/; acute and
+  grave (15k rows) are mostly stress, sometimes vowel quality (Balinese è).
+- E3 done (map): two layers — context small and quiet, hits drawn last with a
+  page-coloured ring; legend inside the map; per-region share strip under it.
+- Cache: index.html loads `app.js?v=<now>`; data fetches use `cache: "no-cache"`.
+  A browser holding the OLD index.html needs one hard reload, then never again.
+- Macron done: ABVD ā → aː (`ingest_cldf._MACRON_IS_LENGTH`); 26 new long-vowel
+  shapes. Acute/grave left alone (mostly stress) — measure before deciding.
+- E1 done: `features.onset_class` skips a leading modifier (ⁿ ᵐ ʰ ˀ) so the
+  consonant decides; lone ˀ before a vowel = glottal stop; added ɕ ʑ ɬ ɮ ʍ ʨ ʥ
+  ʋ ɹ ɻ ɺ. "other" 588 → 12, all non-IPA (ß Ɵ ǥ ɩ Ɉ, Sinological apical ɿ, an
+  en dash, private-use U+F182). `tests/test_features.py`.
+- E2 done: heatmap colour AND numeral = families; <5 families drawn dashed with
+  no verdict; ratio counted by families, in the dial, "about as common as chance"
+  within 0.8–1.25.
+- E4 done: chips ranked by families then languages, count on each, one-language
+  shapes folded behind "+N rare".
+- B3 done: 95% Wilson interval per language (bracket on the bar, range in text);
+  rank by lower bound; `MIN_SAMPLE` deleted. Removed the unsupported UI claim
+  "short lists run higher than dictionaries".
+- B2 done: `Source.kind` (WikiPron = dictionary), language `sample` = word list |
+  dictionary | mixed; Languages filter + ranking grouped by kind.
+- B1 done: `oms/baseline.py` — shuffle each language's words among its own
+  meanings 200× (seed 0); per meaning–shape pair shared by ≥2 families: band
+  5–95% + max. "Beyond chance" = beats EVERY shuffle (multiple comparisons:
+  1,095 pairs → ~5 by chance; 141 pass). Top hits are loans (tea, law), nursery
+  words (mother), onomatopoeia (spit). Bake +10 s. Meanings sorts by it.
+- All roadmap items done, and the five follow-ups (2026-09-29):
+  - ABVD acute/grave: on a ONE-vowel spelling it is quality or tone (Chuukese
+    pe/pé), excluded with a reason; on longer words a stress mark, kept.
+  - Names come from Glottolog 5.3: `sources/glottolog-cldf` is a sparse clone of
+    glottolog/glottolog-cldf (only cldf/languages.csv); `scaleout._apply_names`.
+    Re-fetch: `git clone --depth 1 --filter=blob:none --sparse
+    https://github.com/glottolog/glottolog-cldf sources/glottolog-cldf` then
+    `git sparse-checkout set --no-cone /cldf/languages.csv`. Without it, names
+    fall back to each source's Glottolog_Name.
+  - Non-IPA: capitals (Lu), private use (Co), ß ǥ ɩ Ɉ ɿ ʅ, dashes excluded.
+    "other" onset is empty.
+  - Funnel plot above the Languages list (word lists by default). 63% of word
+    lists fall outside the limits: languages genuinely differ.
+  - `lang/<glottocode>.json` per language: shape -> meanings, one request.
+- `web/audio/manifest.json` is keyed by shape: rerun `python3 -m oms.audio`,
+  or the ASCII-g shapes lose their audio link.
+
+**Older next-list.** Non-IPA left in shapes: 703 "other"-onset shapes (Sinological ȵ ȥ,
+Vietnamese đ), ~40 with `- : , ’`. Heatmap ratios still count languages, not
+families. Concepts: 237 duplicate glosses (WikiPron glosses not joined to
+Concepticon).
+
+Headless render recipe (snap chromium fails; this works):
+`$(ls -d ~/.cache/ms-playwright/chromium_headless_shell-1243/*/)chrome-headless-shell --no-sandbox --virtual-time-budget=15000 --screenshot=out.png "http://localhost:8765/web/#l=yoru1245"`
+
+---
+
 Rolling checkpoint. Work is in `web/app.js` + `web/index.html` (static, served from
 project root: `python3 -m http.server`, open `/web/`). Data: `data/scaled/oms-canon-v1/`
 (chunked; **1458 languages · 9387 shapes** — scaled up from the old 63-lang seed).
