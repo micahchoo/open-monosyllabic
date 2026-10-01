@@ -44,6 +44,8 @@ class Language:
     prosodic_type: str      # permits-open-light | bimoraic-min | unknown
     family: str = ""        # Glottolog top-level family; "" = isolate or not given
     alias: str = ""         # the source's own doculect name, when it differs from Glottolog's
+    syllable_structure: str = ""   # WALS 12A: simple | moderate | complex; "" = not in WALS
+    inventory: dict | None = None  # PHOIBLE: {"onsets": [...], "nuclei": [...]}; None = no inventory
 
 
 @dataclass

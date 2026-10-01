@@ -12,8 +12,8 @@ model ([CONTEXT.md](CONTEXT.md)), the inclusion rule and sourcing pipeline
 ## Status — all five phases implemented, running on real data
 
 Every phase has running, tested code, and the Explorer now serves **real ingested
-data**: 31 sources (CC0/BY/BY-SA/BY-NC/BY-NC-SA cleared) run through the pipeline →
-**1,926 languages · 13,819 open-monosyllable shapes · 13,107 audio clips**. The
+data**: 46 sources (CC0/BY/BY-SA/BY-NC/BY-NC-SA cleared) run through the pipeline →
+**3,023 languages · 12,012 open-monosyllable shapes** (2026-10-01; see HANDOFF.md). The
 Phase-0 licence gate was widened (2026-07-04, user decision "any CC licence is
 fine") to also admit CC-BY-NC/CC-BY-NC-SA sources — that's how Grollemund Bantu
 (424 Bantu languages, CC-BY-NC) cleared and is now part of the served data; the

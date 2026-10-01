@@ -71,7 +71,8 @@ class TestScaleOut(unittest.TestCase):
         self.assertEqual(len(list((outdir / "lang").glob("*.json"))),
                          sum(1 for L in core["languages"] if L["form_count"]))
         b = core["meta"]["baseline"]
-        self.assertEqual(set(b), {"runs", "tested", "beyond"})
+        self.assertEqual(set(b), {"method", "hypotheses", "tested", "beyond", "fdr"})
+        self.assertGreaterEqual(b["hypotheses"], b["tested"])
         self.assertEqual(b["beyond"], sum(c["beyond"] for c in core["concepts"]))
         # every meaning carries its chance comparison (roadmap B1)
         for c in core["concepts"]:

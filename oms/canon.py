@@ -54,7 +54,9 @@ _TONE_ALL = _TONE | _TONE_COMBINING | _TONE_ASCII
 # UPPERCASE letters (A-Z) — real IPA is lowercase; ASCII caps are cover symbols
 # (V=vowel, N=nasal) or tone-class labels, never segments. (IPA small-caps like ɪ ɴ ʀ
 # are separate non-ASCII codepoints and are unaffected.)
-_NON_IPA = set("*+=|/\\<>[]{}()~^?!◌đȥ") | {chr(c) for c in range(0x41, 0x5B)}
+_NON_IPA = set("*+=|/\\<>[]{}()~^?!◌đȥ-,’") | {chr(c) for c in range(0x41, 0x5B)}
+# - , ’ (2026-10-01 audit): 34 shapes carried a hyphen (n-ma), others a comma or a
+# typographic apostrophe — punctuation from the source's spelling, never a segment.
 # ◌ U+25CC: dotted-circle placeholder from Wiktionary combining-sign entries —
 # leaked into shapes like "◌jɐ" (2026-07-04); a placeholder is never a segment.
 # đ ȥ: ABVD-only spelling letters (Vietnamese đường; ȥ has no reading we can
@@ -91,11 +93,21 @@ _STRIP = {
 # fixed meaning, the alveolo-palatal series; IPA writes it with the advanced
 # mark, which keeps them distinct from plain ɲ / c / ɟ (never merge contrasts).
 _FOLD = {"ˑ": "ː", ":": "ː", "·": "ː", "g": "ɡ",
-         "ȵ": "ɲ̟", "ȶ": "c̟", "ȡ": "ɟ̟"}
+         "ȵ": "ɲ̟", "ȶ": "c̟", "ȡ": "ɟ̟",
+         # precomposed affricate letters are the two-letter affricate, one segment
+         # (2026-10-01: /ʥi/ in 1 language beside /dʑi/ in 69)
+         "ʦ": "ts", "ʣ": "dz", "ʧ": "tʃ", "ʤ": "dʒ", "ʨ": "tɕ", "ʥ": "dʑ"}
+
+# A nasal and a stop written as ONE segment is a prenasalized stop, which IPA
+# writes with a superscript nasal: segmented "mb a" and "ᵐba" are one word
+# (2026-10-01: 133 twin shapes, /ⁿda/ 88 languages beside /nda/ 25). Two
+# segments ("n d a") stay a cluster: only the source's segmentation decides.
+_PRENASAL = {"m": "ᵐ", "n": "ⁿ", "ŋ": "ᵑ", "ɲ": "ᶮ", "ɳ": "ᶯ"}
+_STOP_BASES = set("pbtdʈɖcɟkɡqɢ")
 
 
 # Spacing modifier letters that attach to the preceding phoneme, not new segments.
-_ATTACH = set("ːˑʰʲʷˠˤⁿˡʼˀ̚˞")
+_ATTACH = set("ːˑʰʲʷˠˤⁿˡʼˀ̚˞:·")   # ASCII ":" "·" write length too: "ma:" is m + aː, never a coda
 _TIE = {"͡", "͜"}
 
 
@@ -160,6 +172,9 @@ def canonicalize(ipa: str, segmented: bool = False) -> Canon:
                 continue
             out.append(ch)            # R2-R5: preserve base + contrastive diacritics
         if out:                        # a tone- or stress-only token is no segment
-            segments.append(unicodedata.normalize("NFC", "".join(out)))
+            seg = "".join(out)
+            if len(seg) > 1 and seg[0] in _PRENASAL and seg[1] in _STOP_BASES:
+                seg = _PRENASAL[seg[0]] + seg[1:]
+            segments.append(unicodedata.normalize("NFC", seg))
 
     return Canon(segmental="".join(segments), tone="".join(tone_chars), segments=tuple(segments))

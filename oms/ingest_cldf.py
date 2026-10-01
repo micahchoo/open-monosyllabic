@@ -162,8 +162,8 @@ def _ipa(row: dict) -> str:
     raw = (row.get("Form") or row.get("Value") or "").strip()
     if raw.startswith("*"):
         return ""   # reconstruction (proto-form), not an attested word
-    if raw.startswith("-") or raw.endswith("-"):
-        return ""   # bound morpheme (affix/clitic), not a free word
+    if raw and (raw[0] in "-+=" or raw[-1] in "-+="):
+        return ""   # bound morpheme (affix/clitic: -ka, +lɔˀ, ='u), not a free word
     seg = row.get("Segments", "")
     if seg:
         toks = seg.split()
@@ -227,7 +227,11 @@ def load(cldf_dir: str | Path, default_tier: str = "curated") -> dict:
             continue
         segmented = bool(r.get("Segments"))
         exclude = None
-        if not segmented:
+        if not segmented and meta["id"] not in _RESPELL:
+            # no Segments and no respelling rules: a spelling, never read as IPA
+            # (.claude/rules/oms-syllables-are-segments.md; papuanvoices has 10)
+            exclude = "no segments and no respelling rules for this source — spelling, not IPA"
+        elif not segmented:
             exclude = _spelling_exclusion(meta["id"], ipa)
             ipa = ipa if exclude else _respell(meta["id"], ipa)
         param = params.get(r["Parameter_ID"], {})

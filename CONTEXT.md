@@ -21,6 +21,15 @@ _Avoid_: stock, phylum, group.
 The number of distinct words of a Language that the openness rule judged — the denominator of its yield. A Language with no Forms has "none among N examined", which is a statement about the sample, never about the language.
 _Avoid_: total, vocabulary size.
 
+**Syllable Structure**:
+A Language's WALS 12A class (Maddieson 2013): *simple* (CV only), *moderate*, or *complex*. Explains a yield; never filters Forms. Empty when WALS does not classify the language.
+
+**Sound Inventory**:
+The onset classes and vowel buckets a Language's PHOIBLE inventories list (unioned across inventories). Used only to say which heatmap cells a language *could* fill; no inventory segment is ever published as a Form.
+
+**Tone-marked**:
+Most of a Language's judged words carry tone in its sources. A fact about the source, not the language: an unmarked tonal language is still tonal.
+
 **Form**:
 The backbone entity — an open monosyllable as attested in **one specific Language** (e.g. /ma/ in Mandarin), identified by its **canonicalized (CLTS BroadIPA) tone-blind segmental IPA**. Belongs to exactly one Language. Meaning-agnostic and always present: a Language is represented by its Forms even when no meaning data exists. Carries language-specific facts (which tones occur; a **Confidence Tier** for source provenance and a **Classification Confidence** for the openness call; one or more **Sources**; example Words).
 _Avoid_: word (a Form has no meaning attached), syllable (too general).

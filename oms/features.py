@@ -30,19 +30,34 @@ def _base(token: str) -> str:
     return unicodedata.normalize("NFD", token)[0]
 
 
-def onset_class(form: str) -> str:
+def _is_affricate(tok: str) -> bool:
+    """One segment made of a stop and a fricative (ts, tʃ, dʒ, tɕ, ʈʂ, pf)."""
+    letters = [c for c in unicodedata.normalize("NFD", tok) if not unicodedata.combining(c)
+               and unicodedata.category(c) != "Lm"]
+    return len(letters) >= 2 and letters[0] in _STOP and letters[1] in _FRICATIVE
+
+
+def onset_class(form: str, segments: tuple[str, ...] | None = None) -> str:
     """Class of the FIRST onset consonant; 'none' for a vowel/glide-initial form.
+
+    Pass the source's `segments` (Canon.segments): a segment "tʃ" is one
+    affricate, but the joined key "tʃa" re-split reads as t + ʃ, a stop
+    (2026-10-01 audit: ~6,400 affricate-initial forms were filed as stops).
 
     A leading modifier letter (ⁿ ᵐ ᵑ ʰ ˀ — category Lm) marks the consonant after
     it: prenasalized, pre-aspirated, pre-glottalized. It is skipped, so the
     consonant decides. A lone ˀ before a vowel IS the onset: a glottal stop."""
-    toks = _segment(form)
+    toks = list(segments) if segments else _segment(form)
     for k, tok in enumerate(toks):
-        b = _base(tok)
-        if unicodedata.category(b) == "Lm":
-            if b == _GLOTTAL_MODIFIER and k + 1 < len(toks) and _base(toks[k + 1]) in _VOWELS:
+        # leading modifiers inside one segment ("ᵐb") or as a segment of their own
+        core = unicodedata.normalize("NFD", tok)
+        while core and unicodedata.category(core[0]) == "Lm":
+            core = core[1:]
+        if not core:
+            if tok == _GLOTTAL_MODIFIER and k + 1 < len(toks) and _base(toks[k + 1]) in _VOWELS:
                 return "stop"
             continue
+        tok, b = core, core[0]
         if b in _VOWELS:
             return "none"          # vowel-initial (∅ onset) — the null-onset row
         if b in _GLIDES or b in _APPROXIMANT_GLIDE:
@@ -54,7 +69,7 @@ def onset_class(form: str) -> str:
         if b in _CLICK:
             return "click"
         if b in _STOP:
-            return "stop"
+            return "affricate" if _is_affricate(tok) else "stop"
         if b in _AFFRICATE_HINT:
             return "affricate"
         if b in _FRICATIVE:
