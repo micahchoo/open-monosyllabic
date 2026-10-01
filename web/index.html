@@ -68,12 +68,12 @@
   nav .pin-badge{font-size:11px;font-variant-numeric:tabular-nums;background:var(--text-1);
                  color:var(--raised);border-radius:2px;padding:1px 5px;margin-left:5px}
   /* the maker's plate: even the version stamp carries tier composition
-     (hidden below 1150px for space; the per-view stamps remain) */
+     (hidden below 1420px for space; the per-view stamps remain) */
   .plate{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);
          font-variant-numeric:tabular-nums;border:1px solid var(--line-1);border-radius:2px;
          padding:3px 8px;white-space:nowrap;cursor:pointer;background:none;font-family:var(--ui)}
   .plate:hover{border-color:var(--text-1);color:var(--text-1)}
-  @media(max-width:1150px){#navplate{display:none}}
+  @media(max-width:1420px){#navplate{display:none}}
 
   header{padding:1.6rem clamp(1rem,4vw,3rem) .4rem}
   h1{font-size:22px;margin:0 0 .25rem;font-weight:600;letter-spacing:-.01em}
@@ -136,6 +136,25 @@
   /* thin = under 5 families: drawn hollow, no ramp colour, no verdict */
   td.cell.thin{background:transparent;outline:1px dashed var(--line-2);outline-offset:-1px}
   td.cell.thin .n{color:var(--text-3)}
+  /* a language's own grid: read-only, smaller cells */
+  table.heat.mini td.cell{width:32px;height:28px;cursor:default}
+  table.heat.mini td.cell:hover{outline:1px solid var(--line-1)}
+  table.heat.mini td.cell .n{font-size:12px}
+  table.heat.mini{margin:0 0 .3rem}
+  .sayit{font-size:13px;color:var(--text-2);margin:.4rem 0}
+  .sayit .seg{display:inline-block;margin-right:.9rem}
+  /* first-visit explainer: a ruled panel in the page, not a tour or overlay */
+  .intro{margin:1.2rem clamp(1rem,4vw,3rem) 0;padding:1rem 1.2rem 1.1rem;background:var(--raised);
+         border:1px solid var(--line-2);border-top:2px solid var(--text-1);border-radius:2px;max-width:78ch}
+  .intro h2{font-size:18px;text-transform:none;letter-spacing:-.005em;color:var(--text-1);margin:0 0 .5rem}
+  .intro p{margin:.35rem 0 .6rem;font-size:14.5px}
+  .intro ol{margin:.2rem 0 .7rem;padding-left:1.2rem;font-size:14.5px}
+  .intro li{margin:.3rem 0}
+  .intro .row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;margin-top:.6rem}
+  .intro .ex{font-family:var(--ipa);font-size:22px}
+  dl.gloss{margin:.4rem 0}
+  dl.gloss dt{font-weight:600;margin-top:.6rem}
+  dl.gloss dd{margin:.1rem 0 0 0;color:var(--text-2)}
   .legend{font-size:11px;letter-spacing:.05em;text-transform:uppercase;
           color:var(--text-3);margin-top:.6rem;display:flex;gap:1.2rem;flex-wrap:wrap}
 
@@ -290,7 +309,7 @@
   .cshape .langs .ipa{color:var(--text-1);font-size:15px}
   /* pressable serif is PLATED (never underlined — collides with diacritics);
      bare serif = inert specimen */
-  .lshape{cursor:pointer;display:inline-block;border:1px solid var(--line-2);
+  .lshape{cursor:pointer;display:inline-block;white-space:nowrap;border:1px solid var(--line-2);
           border-radius:2px;padding:2px 10px;background:var(--raised)}
   .lshape:hover{border-color:var(--text-1)}
   /* a form entry (word + name) is one click target; the underline sits on the
@@ -312,12 +331,12 @@
   input.search:focus,select.search:focus{border-color:var(--text-1);outline:1.5px solid var(--text-1);
                      outline-offset:1px}
   .hidden{display:none}
-  .pickrow{display:flex;flex-wrap:wrap;gap:.5rem;max-width:24rem;margin:0 0 .6rem}
+  .pickrow{display:flex;flex-wrap:wrap;gap:.5rem;max-width:36rem;margin:0 0 .6rem}
   .funnel svg{width:100%;height:auto;display:block;max-width:36rem}
   .funnel .fdot{cursor:pointer}
   .funnel .note{margin:.2rem 0 .8rem}
   .pickrow select{flex:1 1 7rem}
-  .pickrow select{flex:1;min-width:0;margin:0}
+  .pickrow select{flex:1 1 10rem;min-width:9rem;margin:0}
   .caveat{font-size:13px;color:var(--text-2);border-left:2px solid var(--line-2);padding:.1rem 0 .1rem .6rem;margin:.25rem 0 1rem}
 </style>
 </head>
@@ -331,10 +350,15 @@
   <button data-route="compare">Compare<span id="pinBadge" class="pin-badge hidden">0</span></button>
   <button data-route="about">About</button>
   <button data-route="sources">Sources</button>
+  <span class="navsep" aria-hidden="true"></span>
+  <button id="introBtn" type="button">What is this?</button>
+  <button id="countBtn" type="button" class="plate" aria-pressed="true"
+    title="count language families (related languages count once) or individual languages"></button>
   <button id="navplate" class="plate" title="the maker's plate — click for sources"></button>
 </nav>
 
 <div id="view-meanings">
+  <section id="intro" class="intro hidden" aria-labelledby="introTitle"></section>
   <header>
     <h1>One meaning, many tongues</h1>
     <p class="sub">Pick a meaning to see the open syllables languages use for it. Shapes shared by the most
@@ -371,7 +395,7 @@
       <div id="heat"></div>
       <div class="legend">
         <span id="tierLegend"></span>
-        <span>cell = language families with that shape &middot; dashed = under 5 families, too few to judge &middot; the dial reads languages, sources and the ratio to chance</span>
+        <span>rows = how the word starts &middot; columns = its vowel &middot; cell = language families with a word of that kind &middot; dashed = under 5 families, too few to judge &middot; the dial compares each cell with the families whose sound inventories could fill it</span>
       </div>
     </section>
     <section>
@@ -398,8 +422,11 @@
         <select id="langRegion" class="search" aria-label="region"></select>
         <select id="langFamily" class="search" aria-label="family"></select>
         <select id="langSample" class="search" aria-label="kind of sample"></select>
+        <select id="langSyll" class="search" aria-label="syllable structure (WALS)"></select>
+        <select id="langTone" class="search" aria-label="tone marked in the source"></select>
       </div>
       <div id="langFunnel" class="funnel"></div>
+      <div id="langWhy"></div>
       <div id="langList"></div>
     </section>
     <section>
