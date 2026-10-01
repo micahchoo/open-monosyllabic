@@ -2,7 +2,7 @@
 
 import unittest
 
-from oms.ingest_wikipron import _is_noise_word
+from oms.ingest_wikipron import _LETTER_GLOSS, _is_noise_word
 
 
 class TestWikipronNoise(unittest.TestCase):
@@ -23,6 +23,14 @@ class TestWikipronNoise(unittest.TestCase):
         self.assertFalse(_is_noise_word("कल"), "inherent vowel, no virama")
         self.assertFalse(_is_noise_word("क्या"), "virama + vowel sign")
         self.assertFalse(_is_noise_word("हिन्दी"), "virama + vowel signs")
+
+
+class TestLetterGlosses(unittest.TestCase):
+    def test_letter_senses_are_not_meanings(self):
+        self.assertTrue(_LETTER_GLOSS.match("The letter (Ẹ) with low tone"))
+        self.assertTrue(_LETTER_GLOSS.match("letter of the Yoruba alphabet"))
+        self.assertFalse(_LETTER_GLOSS.match("you (plural)"))
+        self.assertFalse(_LETTER_GLOSS.match("letterbox"))
 
 
 if __name__ == "__main__":

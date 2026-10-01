@@ -1,5 +1,68 @@
 # HANDOFF — Open Monosyllabic web Explorer
 
+## 2026-10-01 — onboarding, typology, tone, and a robustness pass
+
+**Rebuild.** `sources/` was re-cloned from lexibank etc. (sparse, `cldf/` only);
+the 2026-09-29 source list was not recorded, so this build is a reconstruction:
+46 sources, 3,023 languages, 12,012 shapes, 66,731 postings, 178 families.
+New: bowernpny (Pama-Nyungan, the minimality contrast), northeuralex, tls
+(Tanzania: Hadza, Sandawe, Nilotic), hantganbangime (Dogon), yanglalo,
+lamanisoic, yangyi. Reference data: `sources/wals`, `sources/phoible`,
+`sources/concepticon-data` (sparse clones; re-fetch lines in `oms/typology.py`,
+`oms/concepticon.py`). WikiPron: `sources/wikipron/tsv/{iso}.tsv` are copies of
+`CUNY-CL/wikipron data/scrape/tsv/{iso}_{script}_broad.tsv` (Bengali: dhaka).
+Igbo and Wolof are not in WikiPron.
+
+**Excluded as spelling, by triage:** IDS (contributor notations, Americanist;
+1 of 329 varieties IPA) and satterthwaitetb (no Segments; Hani/Lahu spelling).
+Any unsegmented row from a source without `_RESPELL` rules is now excluded.
+
+**Explorer.**
+- Onboarding: a plain first-visit panel on Meanings ("What is this?" reopens
+  it); About gains a glossary, tone, syllable-structure and grid sections.
+- Plain-word IPA (`SOUND_HINT` in app.js): shape chips, sheet ("say it"),
+  heatmap axes, aria-labels.
+- Tone: postings carry a 5th field = tones for that shape in that language;
+  language `tone_marked` = most judged words carry tone (bimodal: Hindi has 2
+  of 43,423). Shown in rows, language lede ("323 different words"), filter.
+- Language page: its own onset × vowel grid; per shape "also in N languages,
+  F other families"; a sounds-only layout when the source has no meanings.
+- WALS 12A (220 languages): filter + "Why some languages have more" panel.
+  Word lists: simple 5.4% median > moderate 4.9% > complex 3.2%.
+- Heatmap comparison now counts only families whose PHOIBLE inventories (772
+  languages) have both sounds; it is described as a share, not as chance.
+- Counting switch (nav): families (default) or languages, for the meaning
+  list, shape chips and the region strip. Concepts carry `fam_count`.
+- Concepticon by gloss (`oms/concepticon.py`): 21,889 unlinked glosses joined,
+  only where unambiguous, category-consistent ("to X" = action) and already
+  in the catalog. Wiktionary letter-page glosses dropped.
+
+**Robustness audit (findings and status):**
+- FIXED "beyond chance" was miscalibrated: it tested only pairs seen in 2+
+  families, so null data passed ~260. Now exact (hypergeometric per language,
+  Poisson-binomial over families) with Benjamini–Hochberg at 5% over every
+  pair 5+ families could share. Result: **4 pairs** (May, tea, /ma/ 'mother',
+  /tu/ 'all'), stable for thresholds 2–8. The 323 of before were artifacts.
+- FIXED `ma:` / `ma·` were split as m + a + ː and excluded as closed (802 forms).
+- FIXED affricates: onset class read from source segments (row 25 → 1,223);
+  ʦ ʧ ʨ ʣ ʤ ʥ fold to ts tʃ tɕ dz dʒ dʑ; one-segment nasal+stop → ᵐb ⁿd.
+- FIXED one word, two sources, opposite verdicts (ABVD maa / Walworth maː):
+  the open form goes under review (360).
+- FIXED families from Glottolog Family_ID; isolates are their own family.
+- FIXED punctuation (- , ’) is not IPA; +x / =x / x+ are clitics, rejected.
+- FIXED languages with nothing examined are dropped (8).
+- OPEN, needs a linguist: ABVD doubled vowels (maa = maː?); is final ˀ a coda
+  (189 forms open/high)?; a coarser comparison key for ɛ/e, ɔ/o twin shapes
+  (406, 343); rates compared only on a shared concept list with family
+  balancing; ABVD as "curated" though respelled; `prosodic_type` (minimality)
+  is unknown for all but one language — no dataset found.
+- OPEN, code: preferred-source tiebreak scores the form, not each source;
+  doculects under one glottocode share one `examined` (union).
+
+Audio was not rebuilt here: run `python3 -m oms.audio` (manifest is keyed by shape).
+
+---
+
 ## 2026-09-29 — data model + UI rework (uncommitted, awaiting review)
 
 **Data (Phase 1a/1b, tests green: `python3 -m pytest -q`, 49 pass).**

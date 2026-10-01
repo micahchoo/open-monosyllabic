@@ -16,6 +16,8 @@ import sys
 import urllib.request
 from pathlib import Path
 
+from oms.ingest_wikipron import LANGMAP
+
 # kaikki.org per-language dump names (English-Wiktionary extraction)
 KAIKKI = {
     "hin": "Hindi", "ben": "Bengali", "tam": "Tamil", "tel": "Telugu",
@@ -59,7 +61,7 @@ def main() -> None:
     root = Path(__file__).resolve().parent.parent
     outdir = root / "sources" / "wikipron" / "gloss"
     outdir.mkdir(parents=True, exist_ok=True)
-    langmap = json.loads((root / "sources" / "wikipron" / "langmap.json").read_text(encoding="utf-8"))
+    langmap = json.loads(LANGMAP.read_text(encoding="utf-8"))
     for iso, lang in KAIKKI.items():
         if iso not in langmap or not (root / "sources" / "wikipron" / "tsv" / f"{iso}.tsv").exists():
             continue

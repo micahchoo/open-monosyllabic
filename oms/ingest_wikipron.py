@@ -15,6 +15,7 @@ Words/glosses are absent, so these languages appear as Forms with no example Wor
 from __future__ import annotations
 
 import json
+import re
 import unicodedata
 from pathlib import Path
 
@@ -49,6 +50,12 @@ def _is_noise_word(w: str) -> bool:
         if any("VIRAMA" in n for n in names) and not any("VOWEL" in n for n in names):
             return True
     return False
+
+
+# Wiktionary letter pages gloss a spelling, not a meaning: Yoruba ẹ̀ came with
+# "The letter (Ẹ) with low tone" beside the pronoun "you" (2026-10-01). The
+# word stays; only the letter senses go.
+_LETTER_GLOSS = re.compile(r"(?i)^\s*(the )?(name of the )?(letter|character|diacritic|syllable)\b")
 
 
 # Hand-made (families, coordinates), so it lives under git — not beside the TSVs
@@ -90,7 +97,7 @@ def load(wikipron_dir: str | Path, langmap_path: str | Path = LANGMAP) -> dict:
             # ("fear, dread, fright, …") but concept grouping needs concise labels
             # ("fear") or every phrasing mints its own near-duplicate concept.
             word_glosses = [g.split(",")[0].split(";")[0].strip() or None
-                            for g in (glosses.get(word.strip()) or [])] or [None]
+                            for g in (glosses.get(word.strip()) or []) if not _LETTER_GLOSS.match(g)] or [None]
             for g in word_glosses:               # >1 gloss -> entries merge into one Word's gloss_set
                 entries.append({
                     "glottocode": meta["glottocode"], "ipa": ipa,

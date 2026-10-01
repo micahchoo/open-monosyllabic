@@ -14,7 +14,7 @@ import re
 from collections import Counter
 from pathlib import Path
 
-from oms.baseline import RUNS, chance_bands
+from oms.baseline import chance_bands
 from oms.model import TIERS
 from oms.pipeline import run
 
@@ -42,12 +42,15 @@ def bake(pipeline_out: dict) -> tuple[dict, dict]:
                 "nucleus_type": f.nucleus_type,
             }
             postings[f.segmental] = []
-        # packed posting: [langIdx, tierRank, ccRank, under_review]
+        # packed posting: [langIdx, tierRank, ccRank, under_review, tones]
+        # tones = how many tones the source gives this shape in this language:
+        # Yoruba /ba/ with three tones is three words behind one shape (0 = unmarked)
         postings[f.segmental].append([
             lang_idx[f.glottocode],
             TIERS.index(f.tier),
             _CC.index(f.classification_confidence),
             1 if f.under_review else 0,
+            len(f.tones),
         ])
 
     core = {
@@ -66,6 +69,9 @@ def bake(pipeline_out: dict) -> tuple[dict, dict]:
                 "form_count": form_count[l.glottocode],
                 "examined": pipeline_out["examined"].get(l.glottocode, 0),
                 "sample": pipeline_out["sample"].get(l.glottocode, ""),
+                "tone_marked": l.glottocode in pipeline_out.get("tone_marked", ()),
+                "syllable_structure": l.syllable_structure,
+                "inventory": l.inventory,
             }
             for l in langs
         ],
@@ -188,13 +194,15 @@ def concept_labels(concepts: dict) -> dict[str, str]:
     return labels
 
 
-def _concept_summary(concepts: dict, bands: dict) -> list[dict]:
-    # beyond = shapes more families share than ANY of the shuffles gave (see
-    # baseline.chance_bands); gap = the largest such excess, for sorting (B1)
+def _concept_summary(concepts: dict, bands: dict, families: list[str] | None = None, fdr: float = 0.05) -> list[dict]:
+    # beyond = shapes more families share than chance, at a 5% false-discovery
+    # rate (baseline.chance_bands); gap = the largest excess over the band, for sorting (B1)
     def excess(k):
-        return [obs - top for obs, lo, hi, top in bands.get(k, {}).values() if obs > top]
+        return [obs - hi for obs, lo, hi, q in bands.get(k, {}).values() if q <= fdr]
     rows = [{"ckey": c["ckey"], "gloss": c["gloss"], "concepticon_id": c["concepticon_id"],
              "lang_count": len(c["langs"]), "shape_count": len(c["shapes"]),
+             # families, as everywhere: languages without one count alone
+             "fam_count": len({(families or [])[li] if families and families[li] else f"lang:{li}" for li in c["langs"]}),
              "beyond": len(excess(c["ckey"])), "gap": max(excess(c["ckey"]), default=0)}
             for c in concepts.values()]
     # hero ordering: broadest reach first, then tightest sound↔meaning convergence
@@ -229,10 +237,10 @@ def write_build(pipeline_out: dict, outdir: Path, chunk: bool = False) -> tuple[
     core, forms_detail = bake(pipeline_out)
     # meaning is a hero axis: concept summary in core, concept detail as chunks
     concepts = build_concepts(pipeline_out)
-    bands = chance_bands(concepts, [l.family for l in pipeline_out["languages"].values()])
-    core["concepts"] = _concept_summary(concepts, bands)
-    core["meta"]["baseline"] = {"runs": RUNS, "tested": sum(len(b) for b in bands.values()),
-                                "beyond": sum(c["beyond"] for c in core["concepts"])}
+    fams = [l.family for l in pipeline_out["languages"].values()]
+    bands, summary = chance_bands(concepts, fams)
+    core["concepts"] = _concept_summary(concepts, bands, fams, summary["fdr"])
+    core["meta"]["baseline"] = {"method": "exact", **summary}
     outdir.mkdir(parents=True, exist_ok=True)
     (outdir / "core.json").write_text(json.dumps(core, ensure_ascii=False, indent=1), encoding="utf-8")
     cdir = outdir / "concept"

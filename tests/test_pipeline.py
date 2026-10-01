@@ -67,12 +67,30 @@ class TestPipeline(unittest.TestCase):
     def test_bake_core_index(self):
         core, forms_detail = bake(self.out)
         self.assertEqual(core["meta"]["scheme_version"], "oms-canon-v1")
-        # every posting is the packed 4-tuple
+        # every posting is the packed 5-tuple; the last is the form's tone count
         for shape, posts in core["postings"].items():
             for p in posts:
-                self.assertEqual(len(p), 4, "posting = [langIdx, tierRank, ccRank, under_review]")
+                self.assertEqual(len(p), 5, "posting = [langIdx, tierRank, ccRank, under_review, tones]")
+                f = forms_detail[f"{core['languages'][p[0]]['glottocode']}|{shape}"]
+                self.assertEqual(p[4], len(f["tones"]))
         # /ma/ is in the index across languages
         self.assertGreaterEqual(len(core["postings"]["ma"]), 4)
+
+    def test_tone_marked_languages(self):
+        # Mandarin's seed words carry tone letters; Nuxalk's carry none. The flag
+        # is "the source marks tone", not "the language is tonal".
+        core, _ = bake(self.out)
+        marked = {l["glottocode"]: l["tone_marked"] for l in core["languages"]}
+        self.assertTrue(marked["stan1290"])
+        self.assertFalse(marked["bell1243"])
+
+    def test_concept_counts_families(self):
+        from oms.bake import build_concepts, _concept_summary
+        concepts = build_concepts(self.out)
+        fams = [l.family for l in self.out["languages"].values()]
+        for row in _concept_summary(concepts, {}, fams):
+            self.assertLessEqual(row["fam_count"], row["lang_count"])
+            self.assertGreaterEqual(row["fam_count"], 1)
 
     def test_examined_counts_every_judged_word(self):
         # A language's yield is only readable against how many words were looked
@@ -139,7 +157,9 @@ class TestFamilyMerge(unittest.TestCase):
             "latitude": 7.4, "longitude": 3.9, "doc_status": "moderate", "prosodic_type": "unknown"}
 
     def _run(self, first_family, second_family):
-        ds = [{"sources": self.SRC, "entries": [],
+        # one word, so the language has something examined and stays in the output
+        word = [{"glottocode": "yoru1245", "ipa": "b a", "gloss": "come", "source": "s", "segmented": True}]
+        ds = [{"sources": self.SRC, "entries": word,
                "languages": [dict(self.LANG, **({"family": f} if f is not None else {}))]}
               for f in (first_family, second_family)]
         return run_datasets(ds)["languages"]["yoru1245"].family
@@ -149,6 +169,10 @@ class TestFamilyMerge(unittest.TestCase):
 
     def test_family_survives_a_later_dataset_without_one(self):
         self.assertEqual(self._run("Atlantic-Congo", ""), "Atlantic-Congo")
+
+    def test_a_language_with_nothing_examined_is_dropped(self):
+        ds = [{"sources": self.SRC, "entries": [], "languages": [dict(self.LANG)]}]
+        self.assertNotIn("yoru1245", run_datasets(ds)["languages"])
 
 
 class TestConceptLabels(unittest.TestCase):
