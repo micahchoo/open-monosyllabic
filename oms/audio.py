@@ -14,6 +14,7 @@ gap), and the deaf-user path is free: the visible IPA already carries the signal
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import unicodedata
@@ -163,6 +164,10 @@ def render(shape: str, out_dir: Path) -> dict | None:
         return None
     stem = out_dir / slug(shape)
     wav, webm = stem.with_suffix(".wav"), stem.with_suffix(".webm")
+    clip = {"file": webm.name, "provenance": "synthesized", "engine": "espeak-ng",
+            "lossy": lossy, "tone_rendered": False}
+    if webm.exists() and webm.stat().st_size:
+        return clip   # a clip is a function of its shape: reuse it (CI caches web/audio)
     try:
         subprocess.run(["espeak-ng", f"[[{phon}]]", "-w", str(wav)], check=True,
                        capture_output=True, timeout=20)
@@ -170,8 +175,7 @@ def render(shape: str, out_dir: Path) -> dict | None:
         return None
     if not _to_webm(wav, webm):
         return None
-    return {"file": webm.name, "provenance": "synthesized", "engine": "espeak-ng",
-            "lossy": lossy, "tone_rendered": False}
+    return clip
 
 
 def build(core_path: str | Path, out_dir: str | Path) -> dict:
@@ -181,13 +185,14 @@ def build(core_path: str | Path, out_dir: str | Path) -> dict:
     shapes = [s["shape"] for s in core["shapes"]]
     # best engine first, in one model-load pass (empty dict if Toucan isn't provisioned)…
     manifest = _toucan_batch(shapes, out_dir)
-    # …then espeak-ng fills every shape Toucan didn't produce.
-    for sh in shapes:
-        if sh in manifest:
-            continue
-        clip = render(sh, out_dir)
-        if clip:
-            manifest[sh] = clip
+    # …then espeak-ng fills every shape Toucan didn't produce, in parallel
+    # (each clip is two subprocesses; 12,000 in a row took most of a CI run)
+    from concurrent.futures import ThreadPoolExecutor
+    todo = [sh for sh in shapes if sh not in manifest]
+    with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
+        for sh, clip in zip(todo, pool.map(lambda sh: render(sh, out_dir), todo)):
+            if clip:
+                manifest[sh] = clip
     (out_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1),
                                            encoding="utf-8")
     # sweep clips this build no longer emits (renamed/removed shapes, old engine
